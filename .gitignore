@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+venv/
+*.sqlite3
+
+# FastAPI build cache
+*.log
+*.db
+
+# React
+node_modules/
+dist/
+.env.local
+.env.development
+.env.production
+
+# Mac & system
+.DS_Store
+*.swp
