@@ -10,20 +10,43 @@ const api = axios.create({
   },
 });
 
-// Error handler
-const handleError = (error: any) => {
+// Type definitions for medical analysis
+interface MedicalAnalysisResponse {
+  success: boolean;
+  diagnosis: string[];
+  clinical_treatment: string[];
+  medical_history: string[];
+  medical_entities?: Array<{
+    text: string;
+    type: string;
+    confidence: number;
+  }>;
+  icd_codes?: Array<{
+    code: string;
+    description: string;
+  }>;
+  error?: string;
+}
+
+// Error handler with improved typing
+const handleError = (error: any): never => {
+  console.error('API Error:', error);
+  
   if (error.response) {
+    // Server responded with error
     throw {
       message: error.response.data.detail || 'An error occurred',
       status: error.response.status,
       data: error.response.data
     };
   } else if (error.request) {
+    // Request made but no response
     throw {
       message: 'Server not responding. Please try again later.',
       status: 503
     };
   } else {
+    // Something else went wrong
     throw {
       message: error.message || 'An unexpected error occurred',
       status: 500
@@ -55,44 +78,38 @@ export const documentApi = {
     }
   },
 
-  getMedicalAnalysis: async (data: { text: string }) => {
+  getMedicalAnalysis: async (data: { text: string }): Promise<MedicalAnalysisResponse> => {
     try {
-      console.log('Sending analysis request with text:', data.text);
-      const response = await api.post('/analysis/full', { text: data.text });
-      console.log('Received analysis response:', response.data);
+      console.log('Sending structured analysis request:', data.text.substring(0, 100) + '...');
+      
+      // Call the new structured-analysis endpoint
+      const response = await api.post('/summary/structured-analysis', { text: data.text });
+      console.log('Received structured analysis response:', response.data);
 
-      if (response.data.success) {
-        const transformedData = {
-          summary: {
-            diagnosis: response.data.entities
-              .filter(e => e.type === 'DISEASE' || e.type === 'DIAGNOSIS')
-              .map(e => e.text).join(', '),
-            medications: response.data.entities
-              .filter(e => e.type === 'MEDICATION' || e.type === 'DRUG')
-              .map(e => e.text).join(', '),
-            followUp: response.data.entities
-              .filter(e => e.type === 'PROCEDURE' || e.type === 'TREATMENT')
-              .map(e => e.text).join(', ')
-          },
-          entities: response.data.entities,
-          icdCodes: response.data.icd_codes,
-          originalText: response.data.originalText
-        };
-
-        return transformedData;
-      } else {
-        throw new Error(response.data.detail || 'Analysis failed');
+      if (!response.data || !response.data.success) {
+        throw new Error(response.data?.error || 'Analysis failed');
       }
+
+      // Ensure all required fields are present with defaults
+      const result: MedicalAnalysisResponse = {
+        success: true,
+        diagnosis: response.data.diagnosis || [],
+        clinical_treatment: response.data.clinical_treatment || [],
+        medical_history: response.data.medical_history || [],
+        medical_entities: response.data.medical_entities || [],
+        icd_codes: response.data.icd_codes || []
+      };
+
+      return result;
     } catch (error) {
       console.error('Error in getMedicalAnalysis:', error);
-      handleError(error);
-      throw error;
+      throw handleError(error);
     }
   },
 
   getSummary: async (text: string) => {
     try {
-      const response = await api.post('/summary/generate', { text });
+      const response = await api.post('/summary/bullet-points', { text });
       return response.data;
     } catch (error) {
       handleError(error);
@@ -141,7 +158,7 @@ export const bloodApi = {
         throw new Error('Invalid response format from server');
       }
 
-      const data = {
+      return {
         ...response.data,
         summary: {
           normalCount: 0,
@@ -151,12 +168,9 @@ export const bloodApi = {
         },
         tests: response.data.tests || []
       };
-
-      return data;
     } catch (error) {
       console.error('Blood analysis error:', error);
-      handleError(error);
-      throw error;
+      throw handleError(error);
     }
   },
 
@@ -176,7 +190,7 @@ export const bloodApi = {
         throw new Error('Invalid response format from server');
       }
 
-      const data = {
+      return {
         tests: response.data.tests || [],
         interpretation: response.data.interpretation || '',
         recommendations: response.data.recommendations || [],
@@ -187,12 +201,9 @@ export const bloodApi = {
           ...(response.data.summary || {})
         }
       };
-
-      return data;
     } catch (error) {
       console.error('Blood report upload error:', error);
-      handleError(error);
-      throw error;
+      throw handleError(error);
     }
   }
 };

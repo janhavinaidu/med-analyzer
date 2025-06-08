@@ -4,6 +4,9 @@ from typing import Dict, Any, List, Optional
 from transformers import AutoTokenizer, AutoModelForTokenClassification, pipeline
 import json
 from rapidfuzz import fuzz, process
+from utils.section_extractor import SectionExtractor
+from utils.type_converter import convert_numpy_types
+from fastapi.responses import JSONResponse
 
 router = APIRouter()
 
@@ -66,18 +69,51 @@ class BloodTestInput(BaseModel):
     value: float
     unit: str
 
+class StructuredAnalysisResponse(BaseModel):
+    success: bool
+    primary_diagnosis: str
+    prescribed_medication: List[str]
+    followup_instructions: str
+    medical_entities: List[Entity]
+    icd_codes: List[IcdCode]
+    error: Optional[str] = None
+
+    class Config:
+        schema_extra = {
+            "example": {
+                "success": True,
+                "primary_diagnosis": "Diagnosed with acute pharyngitis.",
+                "prescribed_medication": [
+                    "Amoxicillin 500mg twice daily",
+                    "Ibuprofen 200mg as needed"
+                ],
+                "followup_instructions": "Return in 1 week if symptoms persist.",
+                "medical_entities": [
+                    {"text": "pharyngitis", "type": "DISEASE", "confidence": 0.92},
+                    {"text": "Amoxicillin", "type": "MEDICATION", "confidence": 0.95}
+                ],
+                "icd_codes": [
+                    {"code": "J02.9", "description": "Acute pharyngitis, unspecified"}
+                ],
+                "error": None
+            }
+        }
+
 def extract_entities(text: str) -> List[Dict[str, Any]]:
     """
     Extract biomedical entities using Hugging Face transformer.
+    Returns confidence scores as native Python floats.
     """
     try:
         results = ner_pipeline(text)
         entities = []
         for ent in results:
+            # Convert NumPy float32/float64 to native Python float
+            confidence = float(ent["score"])
             entities.append({
-                "text": ent["word"],
-                "type": ent["entity_group"],
-                "confidence": round(ent["score"], 3)
+                "text": str(ent["word"]),  # Ensure string type
+                "type": str(ent["entity_group"]),  # Ensure string type
+                "confidence": round(confidence, 3)  # Native Python float
             })
         return entities
     except Exception as e:
@@ -89,24 +125,25 @@ def extract_entities(text: str) -> List[Dict[str, Any]]:
 def predict_icd_codes(text: str) -> List[Dict[str, str]]:
     """
     Predict ICD-10 codes using fuzzy matching.
+    Returns all strings as native Python strings.
     """
     try:
-        medical_terms = [ent["word"] for ent in ner_pipeline(text)]
+        medical_terms = [str(ent["word"]) for ent in ner_pipeline(text)]  # Ensure string type
         
         predicted_codes = []
         for term in medical_terms:
             matches = process.extract(
                 term,
-                [(code, desc) for code, desc in ICD10_CODES.items()],
+                [(str(code), str(desc)) for code, desc in ICD10_CODES.items()],  # Ensure string type
                 limit=1,
                 scorer=fuzz.token_set_ratio
             )
             
-            if matches and matches[0][1] > 80:
+            if matches and matches[0][1] > 80:  # matches[0][1] is already a native Python int
                 code, desc = matches[0][0]
                 predicted_codes.append({
-                    "code": code,
-                    "description": desc
+                    "code": str(code),  # Ensure string type
+                    "description": str(desc)  # Ensure string type
                 })
         
         return predicted_codes
@@ -227,4 +264,72 @@ async def full_analysis(input_data: TextInput):
             icd_codes=[],
             originalText=input_data.text,
             error=f"Error performing analysis: {str(e)}"
+        )
+
+@router.post("/structured-analysis")
+async def structured_analysis(input_data: TextInput):
+    """
+    Perform structured analysis on medical text, extracting sections, entities, and ICD codes.
+    Returns all numeric values as native Python types.
+    
+    Args:
+        input_data (TextInput): The input text to analyze
+        
+    Returns:
+        JSONResponse containing:
+        - primary_diagnosis (List[str]): List of diagnoses
+        - prescribed_medication (List[str]): List of medications
+        - followup_instructions (List[str]): List of follow-up instructions
+        - medical_entities (List[Entity]): List of extracted medical entities with native Python confidence scores
+        - icd_codes (List[IcdCode]): List of relevant ICD codes
+        
+    Raises:
+        HTTPException: If text is empty or processing fails
+    """
+    try:
+        # Validate input
+        if not input_data.text.strip():
+            raise HTTPException(
+                status_code=400,
+                detail="Input text cannot be empty"
+            )
+
+        # Extract structured sections
+        section_extractor = SectionExtractor()
+        sections = section_extractor.extract_sections(input_data.text)
+        
+        # Extract entities and ICD codes
+        entities = extract_entities(input_data.text)
+        icd_codes = predict_icd_codes(input_data.text)
+        
+        # Prepare response data
+        response_data = {
+            "success": True,
+            "primary_diagnosis": sections["primary_diagnosis"],
+            "prescribed_medication": sections["prescribed_medication"],
+            "followup_instructions": sections["followup_instructions"],
+            "medical_entities": entities,
+            "icd_codes": icd_codes,
+            "error": None
+        }
+        
+        # Convert any NumPy types to native Python types
+        response_data = convert_numpy_types(response_data)
+        
+        # Return as JSONResponse to ensure proper serialization
+        return JSONResponse(content=response_data)
+        
+    except Exception as e:
+        error_response = {
+            "success": False,
+            "error": f"Error performing structured analysis: {str(e)}",
+            "primary_diagnosis": [],
+            "prescribed_medication": [],
+            "followup_instructions": [],
+            "medical_entities": [],
+            "icd_codes": []
+        }
+        return JSONResponse(
+            status_code=500,
+            content=error_response
         )

@@ -3,26 +3,25 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { ArrowUp, FileText, Upload, Stethoscope, Info } from 'lucide-react';
+import { ArrowUp, FileText, Upload, Stethoscope, Info, History, Pill } from 'lucide-react';
 import { useToast } from "@/hooks/use-toast";
 
 interface AnalysisResultsProps {
   data: {
-    summary: {
-      diagnosis: string;
-      medications: string;
-      followUp: string;
-    };
-    entities: Array<{
+    success: boolean;
+    diagnosis: string[];
+    clinical_treatment: string[];
+    medical_history: string[];
+    medical_entities: Array<{
       text: string;
       type: string;
       confidence: number;
     }>;
-    icdCodes: Array<{
+    icd_codes: Array<{
       code: string;
       description: string;
     }>;
-    originalText: string;
+    error?: string;
   };
   onReset: () => void;
 }
@@ -33,11 +32,11 @@ export const AnalysisResults: React.FC<AnalysisResultsProps> = ({ data, onReset 
   console.log('AnalysisResults rendered with data:', data);
   
   // Validate required data
-  if (!data?.summary) {
-    console.error('Missing summary in analysis data:', data);
+  if (!data?.success) {
+    console.error('Analysis failed:', data?.error);
     return (
       <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
-        <p className="text-red-800">Error: Analysis data is incomplete or missing</p>
+        <p className="text-red-800">Error: {data?.error || 'Analysis failed'}</p>
       </div>
     );
   }
@@ -84,10 +83,10 @@ export const AnalysisResults: React.FC<AnalysisResultsProps> = ({ data, onReset 
         <div>
           <h2 className="text-4xl font-bold text-gray-900 mb-2 flex items-center gap-3">
             <Stethoscope className="w-8 h-8 text-blue-600" />
-            Analysis Results
+            Medical Analysis Results
           </h2>
           <p className="text-lg text-gray-600 leading-relaxed">
-            AI-powered medical document analysis and clinical insights
+            AI-powered medical document analysis with structured insights
           </p>
         </div>
         <div className="flex gap-3">
@@ -111,88 +110,105 @@ export const AnalysisResults: React.FC<AnalysisResultsProps> = ({ data, onReset 
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
-        {/* Enhanced Main Summary - Larger with accent border */}
+        {/* Main Content - 2 Columns */}
         <div className="xl:col-span-2 space-y-8">
-          <Card className="border-2 border-blue-200 bg-gradient-to-br from-blue-50/50 to-white backdrop-blur-sm shadow-2xl relative overflow-hidden">
-            {/* Glow effect */}
-            <div className="absolute inset-0 bg-gradient-to-r from-blue-400/5 to-transparent pointer-events-none"></div>
-            
+          {/* Diagnosis Section */}
+          <Card className="border-2 border-purple-200 bg-gradient-to-br from-purple-50/50 to-white backdrop-blur-sm shadow-2xl relative overflow-hidden">
+            <div className="absolute inset-0 bg-gradient-to-r from-purple-400/5 to-transparent pointer-events-none"></div>
             <CardHeader className="pb-6">
-              <CardTitle className="text-2xl font-bold text-blue-900 flex items-center gap-3">
-                <div className="p-2 bg-blue-100 rounded-lg">
-                  <FileText className="w-6 h-6 text-blue-600" />
+              <CardTitle className="text-2xl font-bold text-purple-900 flex items-center gap-3">
+                <div className="p-2 bg-purple-100 rounded-lg">
+                  <Stethoscope className="w-6 h-6 text-purple-600" />
                 </div>
-                Medical Summary
+                Diagnosis & Clinical Findings
               </CardTitle>
-              <CardDescription className="text-lg text-gray-600">
-                Key clinical information extracted from your medical document
-              </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="p-6 bg-green-50/80 rounded-xl border border-green-200/50">
-                <h4 className="font-bold text-green-800 mb-3 text-lg flex items-center gap-2">
-                  🩺 Primary Diagnosis
-                </h4>
-                <p className="text-gray-800 leading-relaxed text-base">{data.summary.diagnosis}</p>
-              </div>
-              
-              <Separator className="my-6" />
-              
-              <div className="p-6 bg-blue-50/80 rounded-xl border border-blue-200/50">
-                <h4 className="font-bold text-blue-800 mb-3 text-lg flex items-center gap-2">
-                  💊 Prescribed Medications
-                </h4>
-                <p className="text-gray-800 leading-relaxed text-base">{data.summary.medications}</p>
-              </div>
-              
-              <Separator className="my-6" />
-              
-              <div className="p-6 bg-purple-50/80 rounded-xl border border-purple-200/50">
-                <h4 className="font-bold text-purple-800 mb-3 text-lg flex items-center gap-2">
-                  📋 Follow-up Instructions
-                </h4>
-                <p className="text-gray-800 leading-relaxed text-base">{data.summary.followUp}</p>
-              </div>
+            <CardContent>
+              <ul className="space-y-3">
+                {data.diagnosis.map((item, index) => (
+                  <li key={index} className="flex items-start gap-3 p-3 bg-purple-50/50 rounded-lg border border-purple-100/50">
+                    <span className="text-purple-800 mt-1">•</span>
+                    <span className="text-gray-800">{item}</span>
+                  </li>
+                ))}
+              </ul>
             </CardContent>
           </Card>
 
-          {/* Enhanced ICD-10 Codes */}
+          {/* Clinical Treatment Section */}
+          <Card className="border-2 border-blue-200 bg-gradient-to-br from-blue-50/50 to-white backdrop-blur-sm shadow-2xl relative overflow-hidden">
+            <div className="absolute inset-0 bg-gradient-to-r from-blue-400/5 to-transparent pointer-events-none"></div>
+            <CardHeader className="pb-6">
+              <CardTitle className="text-2xl font-bold text-blue-900 flex items-center gap-3">
+                <div className="p-2 bg-blue-100 rounded-lg">
+                  <Pill className="w-6 h-6 text-blue-600" />
+                </div>
+                Clinical Treatment
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ul className="space-y-3">
+                {data.clinical_treatment.map((item, index) => (
+                  <li key={index} className="flex items-start gap-3 p-3 bg-blue-50/50 rounded-lg border border-blue-100/50">
+                    <span className="text-blue-800 mt-1">•</span>
+                    <span className="text-gray-800">{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </CardContent>
+          </Card>
+
+          {/* Medical History Section */}
+          <Card className="border-2 border-green-200 bg-gradient-to-br from-green-50/50 to-white backdrop-blur-sm shadow-2xl relative overflow-hidden">
+            <div className="absolute inset-0 bg-gradient-to-r from-green-400/5 to-transparent pointer-events-none"></div>
+            <CardHeader className="pb-6">
+              <CardTitle className="text-2xl font-bold text-green-900 flex items-center gap-3">
+                <div className="p-2 bg-green-100 rounded-lg">
+                  <History className="w-6 h-6 text-green-600" />
+                </div>
+                Medical History
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ul className="space-y-3">
+                {data.medical_history.map((item, index) => (
+                  <li key={index} className="flex items-start gap-3 p-3 bg-green-50/50 rounded-lg border border-green-100/50">
+                    <span className="text-green-800 mt-1">•</span>
+                    <span className="text-gray-800">{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Sidebar - ICD Codes and Entities */}
+        <div className="space-y-8">
+          {/* ICD-10 Codes */}
           <Card className="bg-white/80 backdrop-blur-sm shadow-xl border-gray-200/50">
             <CardHeader>
               <CardTitle className="text-xl font-bold text-gray-900 flex items-center gap-3">
                 <div className="p-2 bg-orange-100 rounded-lg">
                   <span className="text-lg">🏥</span>
                 </div>
-                ICD-10 Disease Classifications
+                ICD-10 Classifications
               </CardTitle>
-              <CardDescription className="text-base text-gray-600">
-                Standardized medical classification codes for identified conditions
-              </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
-                {data.icdCodes.map((icd, index) => (
-                  <div key={index} className="flex items-start gap-4 p-5 bg-gray-50/80 rounded-xl border border-gray-200/50 hover:bg-gray-100/80 transition-colors">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xl">🏥</span>
-                      <Badge variant="secondary" className="font-mono text-sm px-3 py-1">
-                        {icd.code}
-                      </Badge>
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-sm font-medium text-gray-900 leading-relaxed">{icd.description}</p>
-                    </div>
-                    <Info className="w-4 h-4 text-gray-400 mt-1 cursor-help" />
+              <div className="space-y-3">
+                {data.icd_codes.map((icd, index) => (
+                  <div key={index} className="flex items-start gap-3 p-3 bg-gray-50/80 rounded-lg border border-gray-200/50">
+                    <Badge variant="secondary" className="font-mono shrink-0">
+                      {icd.code}
+                    </Badge>
+                    <span className="text-sm text-gray-800">{icd.description}</span>
                   </div>
                 ))}
               </div>
             </CardContent>
           </Card>
-        </div>
 
-        {/* Enhanced Sidebar */}
-        <div className="space-y-8">
-          {/* Enhanced Medical Entities with color coding */}
+          {/* Medical Entities */}
           <Card className="bg-white/80 backdrop-blur-sm shadow-xl border-gray-200/50">
             <CardHeader>
               <CardTitle className="text-xl font-bold text-gray-900 flex items-center gap-3">
@@ -201,57 +217,20 @@ export const AnalysisResults: React.FC<AnalysisResultsProps> = ({ data, onReset 
                 </div>
                 Medical Entities
               </CardTitle>
-              <CardDescription className="text-base text-gray-600">
-                Identified medical terms with confidence scores
-              </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="space-y-3">
-                {data.entities.map((entity, index) => (
-                  <div key={index} className="flex items-center justify-between p-4 rounded-xl border border-gray-200/50 hover:shadow-md transition-all duration-300 bg-white/50">
-                    <div className="flex items-center gap-3">
-                      <span className="text-lg">{getEntityIcon(entity.type)}</span>
-                      <Badge className={`${getEntityBadgeStyle(entity.type)} text-sm font-medium px-3 py-1`} variant="outline">
-                        {entity.type}
-                      </Badge>
-                      <span className="text-sm font-medium text-gray-900">{entity.text}</span>
-                    </div>
-                    <Badge variant="secondary" className="text-xs text-gray-600 bg-gray-100">
-                      {(entity.confidence * 100).toFixed(0)}%
-                    </Badge>
-                  </div>
+              <div className="flex flex-wrap gap-2">
+                {data.medical_entities.map((entity, index) => (
+                  <Badge
+                    key={index}
+                    variant="secondary"
+                    className={`text-sm px-3 py-1.5 flex items-center gap-1.5 ${getEntityBadgeStyle(entity.type)}`}
+                  >
+                    {getEntityIcon(entity.type)}
+                    <span className="font-medium">{entity.text}</span>
+                    <span className="text-xs opacity-75">({Math.round(entity.confidence * 100)}%)</span>
+                  </Badge>
                 ))}
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Enhanced Legend */}
-          <Card className="bg-white/80 backdrop-blur-sm shadow-xl border-gray-200/50">
-            <CardHeader>
-              <CardTitle className="text-lg font-bold text-gray-900">Entity Color Guide</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3 text-sm">
-                <div className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 transition-colors">
-                  <span className="text-base">🔴</span>
-                  <div className="w-4 h-4 bg-red-100 border border-red-300 rounded-full"></div>
-                  <span className="font-medium">Symptoms & Signs</span>
-                </div>
-                <div className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 transition-colors">
-                  <span className="text-base">💊</span>
-                  <div className="w-4 h-4 bg-green-100 border border-green-300 rounded-full"></div>
-                  <span className="font-medium">Medications & Drugs</span>
-                </div>
-                <div className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 transition-colors">
-                  <span className="text-base">🔬</span>
-                  <div className="w-4 h-4 bg-purple-100 border border-purple-300 rounded-full"></div>
-                  <span className="font-medium">Diseases & Conditions</span>
-                </div>
-                <div className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 transition-colors">
-                  <span className="text-base">📋</span>
-                  <div className="w-4 h-4 bg-gray-100 border border-gray-300 rounded-full"></div>
-                  <span className="font-medium">Other Medical Terms</span>
-                </div>
               </div>
             </CardContent>
           </Card>

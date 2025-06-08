@@ -16,10 +16,13 @@ export interface Summary {
 }
 
 export interface AnalysisResponse {
-  summary: Summary;
-  entities: Entity[];
-  icdCodes: IcdCode[];
-  originalText: string;
+  success: boolean;
+  primary_diagnosis: string;
+  prescribed_medication: string[];
+  followup_instructions: string;
+  medical_entities: Entity[];
+  icd_codes: IcdCode[];
+  error?: string;
 }
 
 export interface ChatResponse {
