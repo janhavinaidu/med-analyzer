@@ -1,11 +1,17 @@
 import React, { useState, useCallback } from 'react';
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
-import { Upload, File, X, Loader } from 'lucide-react';
+import { Upload, File, X, Loader, FileText } from 'lucide-react';
 import { useToast } from "@/hooks/use-toast";
 import { documentApi } from '@/services/api';
 import { AnalysisResponse } from '@/types/api';
+import { Badge } from "@/components/ui/badge";
+
+interface IcdCode {
+  code: string;
+  description: string;
+}
 
 interface FileUploadProps {
   onAnalysisComplete: (data: AnalysisResponse) => void;
@@ -24,6 +30,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({
   const [extractedText, setExtractedText] = useState('');
   const [showTextEditor, setShowTextEditor] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [icdCodes, setIcdCodes] = useState<IcdCode[]>([]);
   const { toast } = useToast();
 
   const acceptedTypes = [
@@ -54,7 +61,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({
     }
   }, []);
 
-  const handleFileSelection = (file: File) => {
+  const handleFileSelection = async (file: File) => {
     if (!acceptedTypes.includes(file.type)) {
       onError('Please upload a PDF or image file (JPEG, PNG, GIF)');
       return;
@@ -66,41 +73,33 @@ export const FileUpload: React.FC<FileUploadProps> = ({
     }
 
     setSelectedFile(file);
-    simulatePyPDF2Extraction(file);
-  };
-
-  const simulatePyPDF2Extraction = async (file: File) => {
     setIsLoading(true);
-    
-    toast({
-      title: "📄 Extracting Text",
-      description: "Using PyPDF2 to extract text from your document...",
-    });
-    
-    // Simulate PyPDF2 extraction (no GPT)
-    setTimeout(() => {
-      const mockExtractedText = `Patient: John Doe
-Date: ${new Date().toLocaleDateString()}
-Chief Complaint: Follow-up for hypertension and diabetes management
-Diagnosis: Essential hypertension (I10), Type 2 diabetes mellitus without complications (E11.9)
-Current Medications:
-- Metformin 500mg twice daily with meals
-- Lisinopril 10mg once daily in the morning
-- Atorvastatin 20mg at bedtime
-Vital Signs: BP 140/90 mmHg, HR 78 bpm, Temp 98.6°F
-Instructions: Continue current medications, monitor blood glucose daily, low sodium diet (<2g daily)
-Follow-up: Return in 6 weeks for blood pressure recheck and lab work
-Provider: Dr. Smith, Internal Medicine`;
-      
-      setExtractedText(mockExtractedText);
+    try {
+      // Upload and process the file
+      const uploadResult = await documentApi.uploadPdf(file);
+      setExtractedText(uploadResult.text);
       setShowTextEditor(true);
-      setIsLoading(false);
-      
+
+      // Get initial ICD codes
+      const analysisResult = await documentApi.analyzeText(uploadResult.text);
+      if (analysisResult.icd_codes && analysisResult.icd_codes.length > 0) {
+        setIcdCodes(analysisResult.icd_codes);
+      }
+
       toast({
         title: "✅ Text Extraction Complete",
-        description: "Text extracted successfully using PyPDF2. Please review and edit if needed.",
+        description: "Text extracted successfully. Please review and edit if needed.",
       });
-    }, 2000);
+    } catch (error: any) {
+      onError(error.message || 'Failed to process file');
+      toast({
+        title: "❌ File Processing Failed",
+        description: error.message || 'Failed to process file',
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleFileInputChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -120,33 +119,7 @@ Provider: Dr. Smith, Internal Medicine`;
       return;
     }
 
-    setIsLoading(true);
-    try {
-      // Upload and process the file
-      const uploadResult = await documentApi.uploadPdf(file);
-      setExtractedText(uploadResult.text);
-
-      // Get medical analysis
-      const analysisResult = await documentApi.getMedicalAnalysis({
-        text: uploadResult.text
-      });
-
-      onAnalysisComplete(analysisResult);
-      
-      toast({
-        title: "✅ Document Processed Successfully",
-        description: "Your medical document has been analyzed.",
-      });
-    } catch (error: any) {
-      onError(error.message || 'Failed to process document');
-      toast({
-        title: "❌ Error Processing Document",
-        description: error.message || 'Failed to process document',
-        variant: "destructive",
-      });
-    } finally {
-      setIsLoading(false);
-    }
+    handleFileSelection(file);
   };
 
   const handleAnalyze = async () => {
@@ -157,40 +130,23 @@ Provider: Dr. Smith, Internal Medicine`;
 
     setIsLoading(true);
     try {
-      // Log the text being sent
-      console.log('Sending text for analysis:', extractedText.substring(0, 100) + '...');
-      
+      // Get medical analysis
       const analysisResult = await documentApi.getMedicalAnalysis({
         text: extractedText
       });
       
-      // Log the response
-      console.log('Received analysis result:', analysisResult);
-      
-      // Validate the response
-      if (!analysisResult || !analysisResult.success) {
-        throw new Error(analysisResult?.error || 'Analysis failed to return valid results');
+      // Update local ICD codes if available
+      if (analysisResult.icd_codes && analysisResult.icd_codes.length > 0) {
+        setIcdCodes(analysisResult.icd_codes);
       }
       
-      // Ensure all required fields exist
-      const validatedResult: AnalysisResponse = {
-        success: true,
-        primary_diagnosis: analysisResult.primary_diagnosis || '',
-        prescribed_medication: analysisResult.prescribed_medication || [],
-        followup_instructions: analysisResult.followup_instructions || '',
-        medical_entities: analysisResult.medical_entities || [],
-        icd_codes: analysisResult.icd_codes || [],
-        error: analysisResult.error
-      };
-      
-      onAnalysisComplete(validatedResult);
+      onAnalysisComplete(analysisResult);
       
       toast({
         title: "✅ Analysis Complete",
-        description: `Found diagnosis, ${validatedResult.prescribed_medication.length} medications, and follow-up instructions.`,
+        description: "Your medical document has been analyzed.",
       });
     } catch (error: any) {
-      console.error('Analysis error:', error);
       onError(error.message || 'Failed to analyze text');
       toast({
         title: "❌ Analysis Failed",
@@ -206,120 +162,128 @@ Provider: Dr. Smith, Internal Medicine`;
     setSelectedFile(null);
     setExtractedText('');
     setShowTextEditor(false);
+    setIcdCodes([]);
   };
-
-  if (showTextEditor) {
-    return (
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-gray-900">Review Extracted Text</h3>
-          <Button variant="outline" onClick={removeFile} size="sm">
-            <X className="w-4 h-4 mr-2" />
-            Start Over
-          </Button>
-        </div>
-        
-        <Card className="bg-white/90 backdrop-blur-sm border-gray-200/50 shadow-lg">
-          <CardContent className="p-6">
-            <p className="text-sm text-gray-600 mb-4 leading-relaxed">
-              Text extracted using PyPDF2. Please review and make any necessary corrections before analysis:
-            </p>
-            <Textarea
-              value={extractedText}
-              onChange={(e) => setExtractedText(e.target.value)}
-              className="min-h-48 mb-6 border-gray-300 focus:border-blue-500 focus:ring-blue-500/20 bg-white/95"
-              placeholder="Extracted text will appear here..."
-            />
-            <Button 
-              onClick={handleAnalyze} 
-              disabled={isLoading || !extractedText.trim()}
-              className="w-full h-12 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-semibold transition-all duration-300 hover:scale-105 shadow-lg"
-            >
-              {isLoading ? (
-                <>
-                  <Loader className="w-5 h-5 mr-2 animate-spin" />
-                  Analyzing Prescription...
-                </>
-              ) : (
-                'Analyze Prescription'
-              )}
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-6">
-      <Card
-        className={`border-dashed border-2 transition-colors ${
-          isDragOver 
-            ? 'border-blue-400 bg-blue-50' 
-            : selectedFile 
-              ? 'border-green-400 bg-green-50' 
-              : 'border-gray-300 hover:border-gray-400'
-        }`}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
-      >
-        <CardContent className="p-8 text-center">
-          {selectedFile ? (
-            <div className="space-y-4">
-              <div className="flex items-center justify-center">
-                <File className="w-12 h-12 text-green-600" />
+      {!showTextEditor ? (
+        <Card
+          className="border-2 border-dashed border-gray-300 hover:border-blue-500 transition-colors duration-200 relative overflow-hidden"
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+        >
+          <input
+            type="file"
+            id="fileInput"
+            className="hidden"
+            accept=".pdf,.jpg,.jpeg,.png,.gif"
+            onChange={handleFileInputChange}
+            disabled={isLoading}
+          />
+          <CardContent className="flex flex-col items-center justify-center py-12">
+            <Upload className="w-12 h-12 text-gray-400 mb-4" />
+            <p className="text-lg font-medium text-gray-700 mb-2">
+              Drop your medical document here
+            </p>
+            <p className="text-sm text-gray-500 mb-6">
+              Supported formats: PDF, JPEG, PNG, GIF
+            </p>
+            <Button
+              onClick={(e) => {
+                e.stopPropagation();
+                document.getElementById('fileInput')?.click();
+              }}
+              className="bg-blue-500 hover:bg-blue-600 text-white font-semibold px-6 py-2 rounded-lg flex items-center gap-2 transition-colors duration-200"
+              disabled={isLoading}
+            >
+              <Upload className="w-5 h-5" />
+              {isLoading ? 'Uploading...' : 'Upload Document'}
+            </Button>
+          </CardContent>
+        </Card>
+      ) : (
+        <>
+          <Card className="relative">
+            <CardHeader>
+              <CardTitle>Extracted Text</CardTitle>
+              <CardDescription>Review and edit the extracted text if needed</CardDescription>
+            </CardHeader>
+            <CardContent className="pt-0">
+              <div className="absolute top-4 right-4 flex gap-2">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={removeFile}
+                  className="h-8 w-8"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
               </div>
-              <div>
-                <p className="font-medium text-green-800">{selectedFile.name}</p>
-                <p className="text-sm text-green-600">
-                  {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
-                </p>
+              <Textarea
+                value={extractedText}
+                onChange={(e) => setExtractedText(e.target.value)}
+                className="min-h-[300px] font-mono text-sm"
+                placeholder="Extracted text will appear here..."
+              />
+              <div className="flex justify-end mt-4">
+                <Button
+                  onClick={handleAnalyze}
+                  disabled={isLoading || !extractedText.trim()}
+                  className="bg-blue-600 hover:bg-blue-700 text-white"
+                >
+                  {isLoading ? (
+                    <>
+                      <Loader className="mr-2 h-4 w-4 animate-spin" />
+                      Processing...
+                    </>
+                  ) : (
+                    'Analyze Document'
+                  )}
+                </Button>
               </div>
-              {isLoading ? (
-                <div className="flex items-center justify-center">
-                  <Loader className="w-6 h-6 animate-spin text-blue-600 mr-2" />
-                  <span className="text-blue-600">Extracting text with PyPDF2...</span>
+            </CardContent>
+          </Card>
+
+          {/* ICD Codes Section - Always visible */}
+          <Card className="border-2 border-orange-200 bg-gradient-to-br from-orange-50/50 to-white backdrop-blur-sm shadow-2xl relative overflow-hidden">
+            <div className="absolute inset-0 bg-gradient-to-r from-orange-400/5 to-transparent pointer-events-none"></div>
+            <CardHeader className="pb-6">
+              <CardTitle className="text-2xl font-bold text-orange-900 flex items-center gap-3">
+                <div className="p-2 bg-orange-100 rounded-lg">
+                  <FileText className="w-6 h-6 text-orange-600" />
+                </div>
+                Identified ICD Codes
+              </CardTitle>
+              <CardDescription className="text-orange-700">
+                Standardized medical classification codes detected in your document
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {icdCodes.length > 0 ? (
+                <div className="space-y-3">
+                  {icdCodes.map((icd, index) => (
+                    <div key={index} className="flex items-start gap-3 p-3 bg-orange-50/50 rounded-lg border border-orange-100/50">
+                      <Badge variant="secondary" className="font-mono shrink-0 bg-orange-100 text-orange-800">
+                        {icd.code}
+                      </Badge>
+                      <span className="text-gray-800">{icd.description}</span>
+                    </div>
+                  ))}
                 </div>
               ) : (
-                <Button variant="outline" onClick={removeFile}>
-                  <X className="w-4 h-4 mr-2" />
-                  Remove File
-                </Button>
+                <div className="p-4 text-center bg-orange-50/50 rounded-lg border border-orange-100/50">
+                  <p className="text-orange-800">No ICD codes identified yet.</p>
+                  <p className="text-sm text-orange-600 mt-1">
+                    ICD codes will appear here as they are detected in your document.
+                  </p>
+                </div>
               )}
-            </div>
-          ) : (
-            <div className="space-y-4">
-              <Upload className="w-12 h-12 text-gray-400 mx-auto" />
-              <div>
-                <p className="text-lg font-medium text-gray-700">
-                  Drop your prescription document here
-                </p>
-                <p className="text-sm text-gray-500 mt-1">
-                  Or click to browse files
-                </p>
-              </div>
-              <div className="space-y-2">
-                <input
-                  type="file"
-                  id="file-upload"
-                  className="hidden"
-                  accept=".pdf,.jpg,.jpeg,.png,.gif"
-                  onChange={handleFileInputChange}
-                />
-                <label htmlFor="file-upload">
-                  <Button asChild className="cursor-pointer bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800">
-                    <span>Browse Files</span>
-                  </Button>
-                </label>
-                <p className="text-xs text-gray-500">
-                  Supports PDF, JPEG, PNG, GIF (max 10MB)
-                </p>
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+            </CardContent>
+          </Card>
+        </>
+      )}
     </div>
   );
 };

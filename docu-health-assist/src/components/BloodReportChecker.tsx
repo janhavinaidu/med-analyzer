@@ -32,6 +32,7 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { bloodApi } from "@/services/api";
+import { IcdCodesSection } from './IcdCodesSection';
 
 // Interfaces
 interface BloodTest {
@@ -53,6 +54,10 @@ interface BloodData {
   };
   interpretation: string;
   recommendations: string[];
+  icd_codes?: Array<{
+    code: string;
+    description: string;
+  }>;
 }
 
 interface BloodReportCheckerProps {
@@ -183,9 +188,9 @@ export const BloodReportChecker: React.FC<BloodReportCheckerProps> = ({
     const { tests, summary, interpretation, recommendations } = results;
     
     return (
-      <div className="space-y-8 animate-fade-in">
+      <div className="max-w-7xl mx-auto space-y-8 animate-fade-in">
         {/* Header */}
-        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 p-6 bg-white rounded-2xl border shadow">
+        <div className="flex flex-col lg:flex-row justify-between items-center gap-4 p-6 bg-white rounded-2xl border shadow">
           <div>
             <h2 className="text-3xl font-bold text-gray-900 flex items-center gap-2">
               <TestTube className="text-green-600 w-8 h-8" />
@@ -281,7 +286,7 @@ export const BloodReportChecker: React.FC<BloodReportCheckerProps> = ({
         </Card>
 
         {/* Interpretation + Recommendations */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <Card className="bg-blue-50 border-blue-200">
             <CardHeader>
               <CardTitle>Clinical Interpretation</CardTitle>
@@ -352,7 +357,10 @@ export const BloodReportChecker: React.FC<BloodReportCheckerProps> = ({
               <p className="text-lg font-medium text-gray-700">Drag & Drop your PDF</p>
               <p className="text-sm text-gray-500">Or browse below</p>
               <label htmlFor="blood-upload">
-                <Button asChild>
+                <Button 
+                  asChild
+                  className="bg-green-500 hover:bg-green-600 text-white text-sm px-3 py-1.5 rounded inline-flex items-center gap-2"
+                >
                   <span>Browse PDF File</span>
                 </Button>
               </label>

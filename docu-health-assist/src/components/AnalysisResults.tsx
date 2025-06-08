@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { ArrowUp, FileText, Upload, Stethoscope, Info, History, Pill } from 'lucide-react';
 import { useToast } from "@/hooks/use-toast";
+import { IcdCodesSection } from './IcdCodesSection';
 
 interface MedicalEntity {
   text: string;
@@ -160,6 +161,43 @@ export const AnalysisResults: React.FC<AnalysisResultsProps> = ({ data, onReset 
             </CardContent>
           </Card>
 
+          {/* ICD Codes Section - Always visible */}
+          <Card className="border-2 border-orange-200 bg-gradient-to-br from-orange-50/50 to-white backdrop-blur-sm shadow-2xl relative overflow-hidden">
+            <div className="absolute inset-0 bg-gradient-to-r from-orange-400/5 to-transparent pointer-events-none"></div>
+            <CardHeader className="pb-6">
+              <CardTitle className="text-2xl font-bold text-orange-900 flex items-center gap-3">
+                <div className="p-2 bg-orange-100 rounded-lg">
+                  <FileText className="w-6 h-6 text-orange-600" />
+                </div>
+                Identified ICD Codes
+              </CardTitle>
+              <CardDescription className="text-orange-700">
+                Standardized medical classification codes
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {data.icd_codes && data.icd_codes.length > 0 ? (
+                <div className="space-y-3">
+                  {data.icd_codes.map((icd, index) => (
+                    <div key={index} className="flex items-start gap-3 p-3 bg-orange-50/50 rounded-lg border border-orange-100/50">
+                      <Badge variant="secondary" className="font-mono shrink-0 bg-orange-100 text-orange-800">
+                        {icd.code}
+                      </Badge>
+                      <span className="text-gray-800">{icd.description}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="p-4 text-center bg-orange-50/50 rounded-lg border border-orange-100/50">
+                  <p className="text-orange-800">No ICD codes identified yet.</p>
+                  <p className="text-sm text-orange-600 mt-1">
+                    ICD codes will appear here once they are identified in the analysis.
+                  </p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
           {/* Prescribed Medications Section */}
           <Card className="border-2 border-blue-200 bg-gradient-to-br from-blue-50/50 to-white backdrop-blur-sm shadow-2xl relative overflow-hidden">
             <div className="absolute inset-0 bg-gradient-to-r from-blue-400/5 to-transparent pointer-events-none"></div>
@@ -214,68 +252,39 @@ export const AnalysisResults: React.FC<AnalysisResultsProps> = ({ data, onReset 
               )}
             </CardContent>
           </Card>
-
-          {/* ICD Codes Section */}
-          {data.icd_codes && data.icd_codes.length > 0 && (
-            <Card className="border-2 border-orange-200 bg-gradient-to-br from-orange-50/50 to-white backdrop-blur-sm shadow-2xl relative overflow-hidden">
-              <div className="absolute inset-0 bg-gradient-to-r from-orange-400/5 to-transparent pointer-events-none"></div>
-              <CardHeader className="pb-6">
-                <CardTitle className="text-2xl font-bold text-orange-900 flex items-center gap-3">
-                  <div className="p-2 bg-orange-100 rounded-lg">
-                    <FileText className="w-6 h-6 text-orange-600" />
-                  </div>
-                  ICD-10 Classifications
-                </CardTitle>
-                <CardDescription className="text-orange-700">
-                  Standardized medical classification codes
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  {data.icd_codes.map((icd, index) => (
-                    <div key={index} className="flex items-start gap-3 p-3 bg-orange-50/50 rounded-lg border border-orange-100/50">
-                      <Badge variant="secondary" className="font-mono shrink-0 bg-orange-100 text-orange-800">
-                        {icd.code}
-                      </Badge>
-                      <span className="text-gray-800">{icd.description}</span>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
         </div>
 
-        {/* Right Sidebar - Medical Entities */}
+        {/* Sidebar - 1 Column */}
         <div className="space-y-8">
-          <Card className="border-2 border-gray-200 bg-gradient-to-br from-gray-50/50 to-white backdrop-blur-sm shadow-2xl relative overflow-hidden">
-            <div className="absolute inset-0 bg-gradient-to-r from-gray-400/5 to-transparent pointer-events-none"></div>
+          {/* Medical Entities Section */}
+          <Card className="border-2 border-indigo-200 bg-gradient-to-br from-indigo-50/50 to-white backdrop-blur-sm shadow-2xl relative overflow-hidden">
+            <div className="absolute inset-0 bg-gradient-to-r from-indigo-400/5 to-transparent pointer-events-none"></div>
             <CardHeader className="pb-6">
-              <CardTitle className="text-2xl font-bold text-gray-900 flex items-center gap-3">
-                <div className="p-2 bg-gray-100 rounded-lg">
-                  <Info className="w-6 h-6 text-gray-600" />
+              <CardTitle className="text-2xl font-bold text-indigo-900 flex items-center gap-3">
+                <div className="p-2 bg-indigo-100 rounded-lg">
+                  <Info className="w-6 h-6 text-indigo-600" />
                 </div>
                 Medical Entities
               </CardTitle>
-              <CardDescription className="text-gray-700">
-                Identified medical terms and concepts
+              <CardDescription className="text-indigo-700">
+                Key medical terms identified
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="space-y-6">
-                {data.medical_entities && data.medical_entities.length > 0 ? (
-                  data.medical_entities.map((entity, index) => (
-                    <div key={index} className="flex items-start gap-3 p-3 bg-gray-50/50 rounded-lg border border-gray-100/50">
-                      <Badge className={getEntityBadgeStyle(entity.type)}>
+              {data.medical_entities && data.medical_entities.length > 0 ? (
+                <div className="space-y-3">
+                  {data.medical_entities.map((entity, index) => (
+                    <div key={index} className="flex items-start gap-3 p-3 bg-indigo-50/50 rounded-lg border border-indigo-100/50">
+                      <Badge variant="secondary" className={getEntityBadgeStyle(entity.type)}>
                         {getEntityIcon(entity.type)} {entity.type}
                       </Badge>
                       <span className="text-gray-800">{entity.text}</span>
                     </div>
-                  ))
-                ) : (
-                  <p className="text-gray-500 italic">No medical entities identified</p>
-                )}
-              </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-gray-500 italic">No medical entities identified</p>
+              )}
             </CardContent>
           </Card>
         </div>
