@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { AnalysisResponse, Entity, IcdCode, ApiError } from '@/types/api';
 
 const BASE_URL = 'http://localhost:8000/api';
 
@@ -9,24 +10,6 @@ const api = axios.create({
     'Content-Type': 'application/json',
   },
 });
-
-// Type definitions for medical analysis
-interface MedicalAnalysisResponse {
-  success: boolean;
-  diagnosis: string[];
-  clinical_treatment: string[];
-  medical_history: string[];
-  medical_entities?: Array<{
-    text: string;
-    type: string;
-    confidence: number;
-  }>;
-  icd_codes?: Array<{
-    code: string;
-    description: string;
-  }>;
-  error?: string;
-}
 
 // Error handler with improved typing
 const handleError = (error: any): never => {
@@ -69,16 +52,37 @@ export const documentApi = {
     }
   },
 
-  analyzeText: async (text: string) => {
+  analyzeText: async (text: string): Promise<AnalysisResponse> => {
     try {
-      const response = await api.post('/text/analyze', { text });
-      return response.data;
+      const response = await fetch(`${BASE_URL}/structured-analysis`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ text }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      return data;
     } catch (error) {
-      handleError(error);
+      console.error('Error analyzing text:', error);
+      return {
+        success: false,
+        primary_diagnosis: '',
+        prescribed_medication: [],
+        followup_instructions: '',
+        medical_entities: [],
+        icd_codes: [],
+        error: error instanceof Error ? error.message : 'Failed to analyze text'
+      };
     }
   },
 
-  getMedicalAnalysis: async (data: { text: string }): Promise<MedicalAnalysisResponse> => {
+  getMedicalAnalysis: async (data: { text: string }): Promise<AnalysisResponse> => {
     try {
       console.log('Sending structured analysis request:', data.text.substring(0, 100) + '...');
       
@@ -91,13 +95,14 @@ export const documentApi = {
       }
 
       // Ensure all required fields are present with defaults
-      const result: MedicalAnalysisResponse = {
+      const result: AnalysisResponse = {
         success: true,
-        diagnosis: response.data.diagnosis || [],
-        clinical_treatment: response.data.clinical_treatment || [],
-        medical_history: response.data.medical_history || [],
+        primary_diagnosis: response.data.primary_diagnosis || '',
+        prescribed_medication: response.data.prescribed_medication || [],
+        followup_instructions: response.data.followup_instructions || '',
         medical_entities: response.data.medical_entities || [],
-        icd_codes: response.data.icd_codes || []
+        icd_codes: response.data.icd_codes || [],
+        error: response.data.error
       };
 
       return result;
@@ -190,17 +195,7 @@ export const bloodApi = {
         throw new Error('Invalid response format from server');
       }
 
-      return {
-        tests: response.data.tests || [],
-        interpretation: response.data.interpretation || '',
-        recommendations: response.data.recommendations || [],
-        summary: {
-          normalCount: 0,
-          abnormalCount: 0,
-          criticalCount: 0,
-          ...(response.data.summary || {})
-        }
-      };
+      return response.data;
     } catch (error) {
       console.error('Blood report upload error:', error);
       throw handleError(error);

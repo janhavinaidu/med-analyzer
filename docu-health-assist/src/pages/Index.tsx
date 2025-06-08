@@ -23,7 +23,14 @@ const Index = () => {
   };
 
   const handleBloodReportComplete = (data) => {
-    setBloodReportData(data);
+    console.log('Blood report analysis completed with data:', data);
+    // Extract blood_data from the response
+    const { blood_data, ...rest } = data;
+    setBloodReportData(blood_data);
+    // If there's medical analysis data, set it too
+    if (rest.success) {
+      setAnalysisData(rest);
+    }
     setIsLoading(false);
   };
 

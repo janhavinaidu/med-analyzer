@@ -10,9 +10,30 @@ export interface IcdCode {
 }
 
 export interface Summary {
-  diagnosis: string;
-  medications: string;
-  followUp: string;
+  primary_diagnosis: string;
+  prescribed_medication: string[];
+  followup_instructions: string;
+}
+
+export interface BloodTest {
+  testName: string;
+  value: number;
+  unit: string;
+  normalRange: string;
+  status: 'normal' | 'high' | 'low';
+  severity?: 'mild' | 'moderate' | 'severe';
+  suggestion?: string;
+}
+
+export interface BloodData {
+  tests: BloodTest[];
+  summary: {
+    normalCount: number;
+    abnormalCount: number;
+    criticalCount: number;
+  };
+  interpretation: string;
+  recommendations: string[];
 }
 
 export interface AnalysisResponse {
@@ -23,6 +44,7 @@ export interface AnalysisResponse {
   medical_entities: Entity[];
   icd_codes: IcdCode[];
   error?: string;
+  blood_data?: BloodData;
 }
 
 export interface ChatResponse {

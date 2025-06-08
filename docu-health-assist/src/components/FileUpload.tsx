@@ -157,17 +157,40 @@ Provider: Dr. Smith, Internal Medicine`;
 
     setIsLoading(true);
     try {
+      // Log the text being sent
+      console.log('Sending text for analysis:', extractedText.substring(0, 100) + '...');
+      
       const analysisResult = await documentApi.getMedicalAnalysis({
         text: extractedText
       });
       
-      onAnalysisComplete(analysisResult);
+      // Log the response
+      console.log('Received analysis result:', analysisResult);
+      
+      // Validate the response
+      if (!analysisResult || !analysisResult.success) {
+        throw new Error(analysisResult?.error || 'Analysis failed to return valid results');
+      }
+      
+      // Ensure all required fields exist
+      const validatedResult: AnalysisResponse = {
+        success: true,
+        primary_diagnosis: analysisResult.primary_diagnosis || '',
+        prescribed_medication: analysisResult.prescribed_medication || [],
+        followup_instructions: analysisResult.followup_instructions || '',
+        medical_entities: analysisResult.medical_entities || [],
+        icd_codes: analysisResult.icd_codes || [],
+        error: analysisResult.error
+      };
+      
+      onAnalysisComplete(validatedResult);
       
       toast({
         title: "✅ Analysis Complete",
-        description: "Your medical text has been analyzed successfully.",
+        description: `Found diagnosis, ${validatedResult.prescribed_medication.length} medications, and follow-up instructions.`,
       });
     } catch (error: any) {
+      console.error('Analysis error:', error);
       onError(error.message || 'Failed to analyze text');
       toast({
         title: "❌ Analysis Failed",

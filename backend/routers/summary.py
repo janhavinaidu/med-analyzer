@@ -1,8 +1,14 @@
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
-from typing import Dict, Any, List, Set
+from pydantic import BaseModel, Field
+from typing import Dict, Any, List, Set, Optional
 from transformers import T5ForConditionalGeneration, T5Tokenizer
 import torch
+from utils.section_extractor import SectionExtractor
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -15,38 +21,35 @@ except Exception as e:
     raise RuntimeError(f"Error loading T5 model: {str(e)}")
 
 class TextInput(BaseModel):
+    text: str = Field(..., description="The medical text to analyze")
+
+class Entity(BaseModel):
     text: str
+    type: str
+    confidence: float
+
+class IcdCode(BaseModel):
+    code: str
+    description: str
 
 class MedicalAnalysisResponse(BaseModel):
     success: bool
-    diagnosis: List[str]
-    clinical_treatment: List[str]
-    medical_history: List[str]
+    primary_diagnosis: str
+    prescribed_medication: List[str]
+    followup_instructions: str
+    medical_entities: List[Entity]
+    icd_codes: List[IcdCode]
+    error: Optional[str] = None
 
-def clean_and_deduplicate(bullets: List[str], seen_items: Set[str]) -> List[str]:
-    """
-    Clean bullet points and remove duplicates while maintaining order.
-    
-    Args:
-        bullets (List[str]): List of bullet points to clean
-        seen_items (Set[str]): Set of already seen items across sections
-        
-    Returns:
-        List[str]: Cleaned and deduplicated bullet points
-    """
+def clean_and_deduplicate(items: List[str], seen_items: Set[str]) -> List[str]:
+    """Clean and deduplicate items while preserving order."""
     cleaned = []
-    for bullet in bullets:
-        # Clean and normalize the bullet point
-        clean_bullet = bullet.strip().lower()
-        
-        # Skip if too short or already seen
-        if len(clean_bullet) < 5 or clean_bullet in seen_items:
-            continue
-            
-        # Add to seen items and keep original case
-        seen_items.add(clean_bullet)
-        cleaned.append(bullet.strip())
-    
+    for item in items:
+        item = item.strip()
+        item_lower = item.lower()
+        if item and item_lower not in seen_items:
+            cleaned.append(item)
+            seen_items.add(item_lower)
     return cleaned
 
 def generate_section_content(text: str, section_type: str) -> List[str]:
@@ -121,29 +124,79 @@ async def get_structured_analysis(input_data: TextInput):
     clinical treatment, and medical history.
     """
     try:
+        if not input_data.text.strip():
+            logger.warning("Empty text input received")
+            return MedicalAnalysisResponse(
+                success=False,
+                primary_diagnosis="",
+                prescribed_medication=[],
+                followup_instructions="",
+                medical_entities=[],
+                icd_codes=[],
+                error="Input text cannot be empty"
+            )
+
+        logger.info("Starting structured analysis")
+        logger.debug("Input text: %s", input_data.text[:200])  # Log first 200 chars
+
+        # Initialize section extractor
+        section_extractor = SectionExtractor()
+        
+        # Extract sections
+        sections = section_extractor.extract_sections(input_data.text)
+        
         # Keep track of seen items to avoid duplicates across sections
         seen_items: Set[str] = set()
         
-        # Generate content for each section
-        diagnosis = generate_section_content(input_data.text, "diagnosis")
-        diagnosis = clean_and_deduplicate(diagnosis, seen_items)
-        
-        clinical_treatment = generate_section_content(input_data.text, "clinical_treatment")
-        clinical_treatment = clean_and_deduplicate(clinical_treatment, seen_items)
-        
-        medical_history = generate_section_content(input_data.text, "medical_history")
-        medical_history = clean_and_deduplicate(medical_history, seen_items)
-        
-        return MedicalAnalysisResponse(
+        # Clean and deduplicate each section
+        diagnosis = clean_and_deduplicate(sections.get("diagnosis", []), seen_items)
+        treatments = clean_and_deduplicate(sections.get("clinical_treatment", []), seen_items)
+        history = clean_and_deduplicate(sections.get("medical_history", []), seen_items)
+
+        logger.info("Initial extraction results:")
+        logger.info("- Diagnoses: %s", diagnosis)
+        logger.info("- Treatments: %s", treatments)
+        logger.info("- History: %s", history)
+
+        # If sections are empty, try using T5 model
+        if not any([diagnosis, treatments, history]):
+            logger.info("No sections found, trying T5 model")
+            try:
+                diagnosis = generate_section_content(input_data.text, "diagnosis")
+                treatments = generate_section_content(input_data.text, "clinical_treatment")
+                history = generate_section_content(input_data.text, "medical_history")
+                
+                logger.info("T5 generation results:")
+                logger.info("- Diagnoses: %s", diagnosis)
+                logger.info("- Treatments: %s", treatments)
+                logger.info("- History: %s", history)
+            except Exception as e:
+                logger.error("Error in T5 generation: %s", str(e))
+
+        # Format response
+        response = MedicalAnalysisResponse(
             success=True,
-            diagnosis=diagnosis,
-            clinical_treatment=clinical_treatment,
-            medical_history=medical_history
+            primary_diagnosis=diagnosis[0] if diagnosis else "",
+            prescribed_medication=treatments if treatments else [],
+            followup_instructions=history[0] if history else "",
+            medical_entities=[],  # TODO: Add entity extraction
+            icd_codes=[],  # TODO: Add ICD code prediction
+            error=None
         )
+        
+        logger.info("Final response: %s", response.dict())
+        return response
+        
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error generating structured analysis: {str(e)}"
+        logger.error("Error in structured analysis: %s", str(e), exc_info=True)
+        return MedicalAnalysisResponse(
+            success=False,
+            primary_diagnosis="",
+            prescribed_medication=[],
+            followup_instructions="",
+            medical_entities=[],
+            icd_codes=[],
+            error=str(e)
         )
 
 @router.post("/bullet-points", response_model=Dict[str, Any])

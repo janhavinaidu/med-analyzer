@@ -11,6 +11,12 @@ import numpy as np
 import cv2
 from dataclasses import dataclass
 from enum import Enum
+from thefuzz import fuzz
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 class ProcessingError(Exception):
     """Custom exception for PDF processing errors with detailed information."""
@@ -20,7 +26,7 @@ class ProcessingError(Exception):
         self.details = details
         super().__init__(self.message)
 
-class PDFType(Enum):
+class PDFType(str, Enum):
     DIGITAL = "digital"
     SCANNED = "scanned"
     UNKNOWN = "unknown"
@@ -40,16 +46,34 @@ class BloodTestExtractor:
     def __init__(self):
         # Common blood test patterns and their variations
         self.test_patterns = {
-            "hemoglobin": r"(?i)(hemoglobin|hgb|hb)\s*:?\s*([\d.]+)\s*(g/dL|g/L|g%)",
-            "wbc": r"(?i)(white\s*blood\s*cells?|wbc|leukocytes?)\s*:?\s*([\d,.]+)\s*(K/µL|×10³/μL|10\^3/µL)",
-            "platelets": r"(?i)(platelets?|plt)\s*:?\s*([\d,.]+)\s*(K/µL|×10³/μL|10\^3/µL)",
-            "glucose_fasting": r"(?i)(fasting\s*glucose|blood\s*sugar|fbs)\s*:?\s*([\d.]+)\s*(mg/dL|mmol/L)",
-            "cholesterol_total": r"(?i)(total\s*cholesterol)\s*:?\s*([\d.]+)\s*(mg/dL|mmol/L)",
-            "rbc": r"(?i)(red\s*blood\s*cells?|rbc|erythrocytes?)\s*:?\s*([\d.]+)\s*(M/µL|×10⁶/μL)",
-            "hematocrit": r"(?i)(hematocrit|hct|pcv)\s*:?\s*([\d.]+)\s*(%)",
-            "mcv": r"(?i)(mean\s*corpuscular\s*volume|mcv)\s*:?\s*([\d.]+)\s*(fL)",
-            "mch": r"(?i)(mean\s*corpuscular\s*hemoglobin|mch)\s*:?\s*([\d.]+)\s*(pg)",
-            "mchc": r"(?i)(mchc)\s*:?\s*([\d.]+)\s*(g/dL|%)",
+            "hemoglobin": {
+                "names": ["hemoglobin", "hgb", "hb", "haemoglobin"],
+                "pattern": r"(?i)(hemoglobin|hgb|hb|haemoglobin)\s*[:=-]?\s*([\d.]+)\s*(g/dL|g/L|g%)"
+            },
+            "wbc": {
+                "names": ["white blood cells", "wbc", "leukocytes", "white cell count"],
+                "pattern": r"(?i)(white\s*blood\s*cells?|wbc|leukocytes?|white\s*cell\s*count)\s*[:=-]?\s*([\d,.]+)\s*(K/µL|×10³/μL|10\^3/µL)"
+            },
+            "platelets": {
+                "names": ["platelets", "plt", "thrombocytes"],
+                "pattern": r"(?i)(platelets?|plt|thrombocytes?)\s*[:=-]?\s*([\d,.]+)\s*(K/µL|×10³/μL|10\^3/µL)"
+            },
+            "glucose_fasting": {
+                "names": ["fasting glucose", "blood sugar", "fbs", "glucose"],
+                "pattern": r"(?i)(fasting\s*glucose|blood\s*sugar|fbs|glucose)\s*[:=-]?\s*([\d.]+)\s*(mg/dL|mmol/L)"
+            },
+            "cholesterol_total": {
+                "names": ["total cholesterol", "cholesterol", "tc"],
+                "pattern": r"(?i)(total\s*cholesterol|cholesterol|tc)\s*[:=-]?\s*([\d.]+)\s*(mg/dL|mmol/L)"
+            },
+            "rbc": {
+                "names": ["red blood cells", "rbc", "erythrocytes"],
+                "pattern": r"(?i)(red\s*blood\s*cells?|rbc|erythrocytes?)\s*[:=-]?\s*([\d.]+)\s*(M/µL|×10⁶/μL)"
+            },
+            "hematocrit": {
+                "names": ["hematocrit", "hct", "pcv"],
+                "pattern": r"(?i)(hematocrit|hct|pcv)\s*[:=-]?\s*([\d.]+)\s*(%)"
+            }
         }
         
         # Common table headers for recognition
@@ -139,8 +163,107 @@ class BloodTestExtractor:
             }
         )
 
+    def _fuzzy_match_test_name(self, test_str: str, min_score: int = 80) -> Optional[str]:
+        """
+        Find the best matching standardized test name using fuzzy string matching.
+        Returns None if no good match is found.
+        """
+        test_str = test_str.lower().strip()
+        best_match = None
+        best_score = 0
+
+        for std_name, variations in self.test_patterns.items():
+            for name in variations["names"]:
+                score = fuzz.ratio(test_str, name)
+                if score > best_score and score >= min_score:
+                    best_score = score
+                    best_match = std_name
+
+        return best_match
+
+    def _extract_from_text_line(self, line: str) -> Optional[Dict[str, Any]]:
+        """
+        Extract test result from a single line of text using flexible pattern matching.
+        """
+        # Try exact pattern matching first
+        for test_name, test_info in self.test_patterns.items():
+            match = re.search(test_info["pattern"], line)
+            if match:
+                try:
+                    value = float(match.group(2).replace(',', ''))
+                    unit = match.group(3)
+                    return {
+                        'test_name': test_name,
+                        'value': value,
+                        'unit': unit
+                    }
+                except (ValueError, IndexError):
+                    continue
+
+        # Try more flexible pattern matching
+        # Look for number + unit combinations
+        value_unit_pattern = r"([\d,.]+)\s*(g/dL|mg/dL|K/µL|%|fL|pg)"
+        number_matches = re.finditer(value_unit_pattern, line)
+        
+        for match in number_matches:
+            try:
+                value = float(match.group(1).replace(',', ''))
+                unit = match.group(2)
+                
+                # Look for test name before the value
+                text_before = line[:match.start()].strip()
+                if text_before:
+                    test_name = self._fuzzy_match_test_name(text_before)
+                    if test_name:
+                        return {
+                            'test_name': test_name,
+                            'value': value,
+                            'unit': unit
+                        }
+            except (ValueError, IndexError):
+                continue
+
+        return None
+
+    def _extract_from_text(self, pdf_path: str) -> List[Dict[str, Any]]:
+        """Extract blood test results from text content using enhanced pattern matching."""
+        results = []
+        
+        try:
+            with pdfplumber.open(pdf_path) as pdf:
+                text = ""
+                for page in pdf.pages:
+                    text += page.extract_text() + "\n"
+                
+                if not text.strip():
+                    raise ValueError("No text content found in PDF")
+                
+                logger.debug("Extracted text content:\n%s", text)
+                
+                # Process text line by line
+                lines = text.split('\n')
+                for line in lines:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    
+                    result = self._extract_from_text_line(line)
+                    if result:
+                        results.append(result)
+        
+        except Exception as e:
+            raise ProcessingError(
+                message="Text extraction failed",
+                error_type="text_extraction_error",
+                details={"error": str(e)}
+            )
+        
+        return results
+
     def _extract_from_tables(self, pdf_path: str) -> List[Dict[str, Any]]:
-        """Extract blood test results from tables in the PDF."""
+        """Extract blood test results from tables with improved header detection."""
+        results = []
+        
         try:
             tables = tabula.read_pdf(
                 pdf_path,
@@ -154,24 +277,30 @@ class BloodTestExtractor:
             if not tables:
                 raise ValueError("No tables found in PDF")
             
-            results = []
             for table in tables:
                 if table.empty:
                     continue
                 
-                # Try to identify column names
+                # Try to identify column names using fuzzy matching
                 test_col = None
                 value_col = None
                 unit_col = None
                 
                 for col in table.columns:
                     col_lower = str(col).lower()
-                    if any(term in col_lower for term in self.table_headers[:4]):
-                        test_col = col
-                    elif any(term in col_lower for term in self.table_headers[4:7]):
-                        value_col = col
-                    elif any(term in col_lower for term in self.table_headers[7:]):
-                        unit_col = col
+                    # Use fuzzy matching for column identification
+                    for header in self.table_headers[:4]:
+                        if fuzz.partial_ratio(col_lower, header) > 80:
+                            test_col = col
+                            break
+                    for header in self.table_headers[4:7]:
+                        if fuzz.partial_ratio(col_lower, header) > 80:
+                            value_col = col
+                            break
+                    for header in self.table_headers[7:]:
+                        if fuzz.partial_ratio(col_lower, header) > 80:
+                            unit_col = col
+                            break
                 
                 if not (test_col and value_col):
                     continue
@@ -191,11 +320,14 @@ class BloodTestExtractor:
                     except ValueError:
                         continue
                     
-                    results.append({
-                        'test_name': test_name.strip(),
-                        'value': value,
-                        'unit': str(unit).strip() if unit else None
-                    })
+                    # Use fuzzy matching to standardize test name
+                    std_test_name = self._fuzzy_match_test_name(test_name)
+                    if std_test_name:
+                        results.append({
+                            'test_name': std_test_name,
+                            'value': value,
+                            'unit': str(unit).strip() if unit else None
+                        })
             
             return results
             
@@ -206,46 +338,8 @@ class BloodTestExtractor:
                 details={"error": str(e)}
             )
 
-    def _extract_from_text(self, pdf_path: str) -> List[Dict[str, Any]]:
-        """Extract blood test results from text content using regex patterns."""
-        results = []
-        
-        try:
-            with pdfplumber.open(pdf_path) as pdf:
-                text = ""
-                for page in pdf.pages:
-                    text += page.extract_text() + "\n"
-                
-                if not text.strip():
-                    raise ValueError("No text content found in PDF")
-                
-                # Search for each test pattern
-                for test_name, pattern in self.test_patterns.items():
-                    matches = re.finditer(pattern, text)
-                    for match in matches:
-                        try:
-                            value = float(match.group(2).replace(',', ''))
-                            unit = match.group(3)
-                            
-                            results.append({
-                                'test_name': test_name,
-                                'value': value,
-                                'unit': unit
-                            })
-                        except (ValueError, IndexError):
-                            continue
-        
-        except Exception as e:
-            raise ProcessingError(
-                message="Text extraction failed",
-                error_type="text_extraction_error",
-                details={"error": str(e)}
-            )
-        
-        return results
-
     def _extract_with_ocr(self, pdf_path: str) -> List[Dict[str, Any]]:
-        """Extract blood test results using OCR for scanned PDFs."""
+        """Extract blood test results using OCR with improved image preprocessing."""
         try:
             # Convert PDF to images
             images = convert_from_path(pdf_path)
@@ -255,32 +349,41 @@ class BloodTestExtractor:
                 # Convert PIL image to OpenCV format
                 img_cv = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
                 
-                # Preprocess image
+                # Enhanced image preprocessing
                 gray = cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY)
-                thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
                 
-                # Perform OCR
-                text += pytesseract.image_to_string(thresh) + "\n"
+                # Adaptive thresholding for better text extraction
+                thresh = cv2.adaptiveThreshold(
+                    gray, 255,
+                    cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                    cv2.THRESH_BINARY,
+                    11, 2
+                )
+                
+                # Noise reduction
+                kernel = np.ones((1, 1), np.uint8)
+                thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
+                
+                # Improve OCR accuracy with custom configuration
+                custom_config = r'--oem 3 --psm 6'
+                text += pytesseract.image_to_string(thresh, config=custom_config) + "\n"
             
             if not text.strip():
                 raise ValueError("OCR could not extract any text")
             
+            logger.debug("OCR extracted text:\n%s", text)
+            
             results = []
-            # Search for each test pattern
-            for test_name, pattern in self.test_patterns.items():
-                matches = re.finditer(pattern, text)
-                for match in matches:
-                    try:
-                        value = float(match.group(2).replace(',', ''))
-                        unit = match.group(3)
-                        
-                        results.append({
-                            'test_name': test_name,
-                            'value': value,
-                            'unit': unit
-                        })
-                    except (ValueError, IndexError):
-                        continue
+            # Process text line by line
+            lines = text.split('\n')
+            for line in lines:
+                line = line.strip()
+                if not line:
+                    continue
+                
+                result = self._extract_from_text_line(line)
+                if result:
+                    results.append(result)
             
             return results
             
@@ -292,16 +395,21 @@ class BloodTestExtractor:
             )
 
     def _normalize_results(self, results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Normalize test results by converting units and standardizing names."""
+        """Normalize test results with improved unit conversion and deduplication."""
         if not results:
             return []
             
         normalized = []
+        seen_tests = set()
         
         for result in results:
             test_name = result['test_name']
             value = result['value']
             unit = result['unit']
+            
+            # Skip if we've already seen this test (keep first occurrence)
+            if test_name in seen_tests:
+                continue
             
             # Convert units if needed
             if unit in self.unit_conversions:
@@ -309,23 +417,19 @@ class BloodTestExtractor:
                 value = converter(value)
                 unit = target_unit
             
-            # Standardize test name
-            test_name = test_name.lower()
-            test_name = re.sub(r'[^a-z0-9]', '_', test_name)
-            test_name = re.sub(r'_+', '_', test_name)
-            test_name = test_name.strip('_')
-            
+            # Add to normalized results
             normalized.append({
                 'testName': test_name,
                 'value': round(value, 2),
                 'unit': unit
             })
+            seen_tests.add(test_name)
         
         return normalized
 
 def process_blood_report(file_path: str) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """
-    Process a blood report PDF and extract test results.
+    Process a blood report PDF and extract test results with enhanced error handling.
     
     Args:
         file_path: Path to the PDF file

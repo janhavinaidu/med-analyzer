@@ -44,7 +44,7 @@ interface BloodTest {
   suggestion?: string;
 }
 
-interface BloodReportData {
+interface BloodData {
   tests: BloodTest[];
   summary: {
     normalCount: number;
@@ -56,11 +56,11 @@ interface BloodReportData {
 }
 
 interface BloodReportCheckerProps {
-  onAnalysisComplete: (data: BloodReportData) => void;
+  onAnalysisComplete: (data: any) => void;
   onError: (error: string) => void;
   isLoading: boolean;
   setIsLoading: (loading: boolean) => void;
-  results?: BloodReportData;
+  results?: BloodData;
   onReset?: () => void;
 }
 
@@ -180,6 +180,8 @@ export const BloodReportChecker: React.FC<BloodReportCheckerProps> = ({
 
   // 🔍 Render result after analysis
   if (results) {
+    const { tests, summary, interpretation, recommendations } = results;
+    
     return (
       <div className="space-y-8 animate-fade-in">
         {/* Header */}
@@ -206,32 +208,49 @@ export const BloodReportChecker: React.FC<BloodReportCheckerProps> = ({
         {/* Summary Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <Card className="bg-green-50 border-green-200">
-            <CardContent className="text-center p-6">
-              <div className="text-3xl font-bold text-green-700">{results.summary.normalCount}</div>
-              <div className="text-green-600">Normal Results</div>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <CheckCircle className="w-5 h-5 text-green-600" />
+                Normal Tests
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-4xl font-bold text-green-700">{summary.normalCount}</p>
             </CardContent>
           </Card>
-          <Card className="bg-orange-50 border-orange-200">
-            <CardContent className="text-center p-6">
-              <div className="text-3xl font-bold text-orange-700">{results.summary.abnormalCount}</div>
-              <div className="text-orange-600">Abnormal Results</div>
-            </CardContent>
-          </Card>
+
           <Card className="bg-red-50 border-red-200">
-            <CardContent className="text-center p-6">
-              <div className="text-3xl font-bold text-red-700">{results.summary.criticalCount}</div>
-              <div className="text-red-600">Critical Results</div>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <XCircle className="w-5 h-5 text-red-600" />
+                Abnormal Tests
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-4xl font-bold text-red-700">{summary.abnormalCount}</p>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-yellow-50 border-yellow-200">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <AlertCircle className="w-5 h-5 text-yellow-600" />
+                Critical Tests
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-4xl font-bold text-yellow-700">{summary.criticalCount}</p>
             </CardContent>
           </Card>
         </div>
 
-        {/* Table of Tests */}
-        <Card className="shadow">
+        {/* Test Results Table */}
+        <Card>
           <CardHeader>
-            <CardTitle className="text-xl font-bold text-gray-800 flex items-center gap-2">
-              <TestTube className="text-green-600 w-6 h-6" />
-              Detailed Results
-            </CardTitle>
+            <CardTitle>Detailed Test Results</CardTitle>
+            <CardDescription>
+              Analysis of {tests.length} blood test parameters
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="overflow-x-auto">
@@ -239,34 +258,21 @@ export const BloodReportChecker: React.FC<BloodReportCheckerProps> = ({
                 <TableHeader>
                   <TableRow>
                     <TableHead>Test Name</TableHead>
-                    <TableHead>Value</TableHead>
+                    <TableHead>Result</TableHead>
                     <TableHead>Normal Range</TableHead>
                     <TableHead>Status</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {results.tests.map((test, i) => (
-                    <React.Fragment key={i}>
-                      <TableRow>
-                        <TableCell>{test.testName}</TableCell>
-                        <TableCell>{test.value} {test.unit}</TableCell>
-                        <TableCell>{test.normalRange}</TableCell>
-                        <TableCell className="flex gap-2 items-center">
-                          {getStatusIcon(test.status)}
-                          {getStatusBadge(test.status, test.severity)}
-                        </TableCell>
-                      </TableRow>
-                      {test.suggestion && (
-                        <TableRow>
-                          <TableCell colSpan={4} className="bg-yellow-50">
-                            <div className="flex items-start gap-2 text-sm text-gray-700 italic">
-                              <AlertCircle className="w-4 h-4 mt-1 text-yellow-600" />
-                              {test.suggestion}
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      )}
-                    </React.Fragment>
+                  {tests.map((test, index) => (
+                    <TableRow key={index}>
+                      <TableCell className="font-medium">{test.testName}</TableCell>
+                      <TableCell>
+                        {test.value} {test.unit}
+                      </TableCell>
+                      <TableCell>{test.normalRange}</TableCell>
+                      <TableCell>{getStatusBadge(test.status, test.severity)}</TableCell>
+                    </TableRow>
                   ))}
                 </TableBody>
               </Table>
@@ -281,7 +287,7 @@ export const BloodReportChecker: React.FC<BloodReportCheckerProps> = ({
               <CardTitle>Clinical Interpretation</CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-gray-800">{results.interpretation}</p>
+              <p className="text-gray-800">{interpretation}</p>
             </CardContent>
           </Card>
           <Card className="bg-purple-50 border-purple-200">
@@ -290,7 +296,7 @@ export const BloodReportChecker: React.FC<BloodReportCheckerProps> = ({
             </CardHeader>
             <CardContent>
               <ul className="space-y-2 text-gray-800">
-                {results.recommendations.map((rec, i) => (
+                {recommendations.map((rec, i) => (
                   <li key={i} className="flex gap-2 items-start">
                     <div className="w-2 h-2 bg-purple-500 rounded-full mt-2" />
                     <span>{rec}</span>

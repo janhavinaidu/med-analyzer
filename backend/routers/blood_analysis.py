@@ -5,8 +5,13 @@ from enum import Enum
 import tempfile
 import os
 from pathlib import Path
+import logging
 
 from utils.pdf_processor import process_blood_report, ProcessingError
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -396,35 +401,106 @@ def generate_recommendations(abnormal_tests: List[BloodTestResult], critical_tes
 async def upload_blood_report(file: UploadFile):
     """
     Upload and analyze a blood test report PDF.
+    Returns structured blood test results with analysis.
+    
+    Raises:
+        400: If file is not a PDF
+        422: If no valid blood test results could be extracted
+        500: For other processing errors
     """
     if not file.filename.lower().endswith('.pdf'):
         raise HTTPException(status_code=400, detail="File must be a PDF")
     
+    tmp_path = None
     try:
         # Create a temporary file to store the upload
         with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp:
             content = await file.read()
             tmp.write(content)
             tmp_path = tmp.name
+            logger.info(f"Processing blood report PDF: {file.filename}")
 
             # Process the PDF and extract test results
-            results = process_blood_report(tmp_path)
+            test_results, metadata = process_blood_report(tmp_path)
             
-            if not results:
+            if not test_results:
+                logger.warning(f"No test results extracted from {file.filename}")
                 raise HTTPException(
                     status_code=422,
-                    detail="Could not extract any valid blood test results from the PDF"
+                    detail={
+                        "message": "Could not extract any valid blood test results from the PDF",
+                        "metadata": metadata
+                    }
                 )
             
-            return {"results": results}
+            logger.info(f"Successfully extracted {len(test_results)} test results using {metadata['extraction_method']}")
             
+            # Analyze the test results
+            analysis = analyze_blood_tests([BloodTest(**test) for test in test_results])
+            
+            # Format response to match medical document analysis
+            abnormal_tests = [test for test in analysis.tests if test.status != "normal"]
+            critical_tests = [test for test in abnormal_tests if test.severity == "severe"]
+            
+            # Generate diagnosis from abnormal tests
+            diagnosis = []
+            if abnormal_tests:
+                diagnosis.append("Blood test abnormalities detected:")
+                for test in abnormal_tests:
+                    diagnosis.append(f"{test.testName} is {test.status} ({test.value} {test.unit})")
+            
+            # Generate treatments from recommendations
+            treatments = []
+            if analysis.recommendations:
+                treatments.extend(analysis.recommendations)
+            
+            # Generate medical history from interpretation
+            history = []
+            if analysis.interpretation:
+                history.append(analysis.interpretation)
+            
+            return {
+                "success": True,
+                "primary_diagnosis": diagnosis[0] if diagnosis else "All blood test results are normal",
+                "prescribed_medication": treatments,
+                "followup_instructions": history[0] if history else "",
+                "medical_entities": [
+                    {
+                        "text": test.testName,
+                        "type": "TEST",
+                        "confidence": 1.0
+                    }
+                    for test in analysis.tests
+                ],
+                "icd_codes": [],  # TODO: Add ICD code mapping for blood test abnormalities
+                "blood_data": {
+                    "tests": analysis.tests,
+                    "summary": analysis.summary,
+                    "interpretation": analysis.interpretation,
+                    "recommendations": analysis.recommendations
+                }
+            }
+            
+    except ProcessingError as pe:
+        logger.error(f"Processing error for {file.filename}: {pe.message}")
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": pe.message,
+                "error_type": pe.error_type,
+                "details": pe.details
+            }
+        )
     except Exception as e:
+        logger.error(f"Unexpected error processing {file.filename}: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
             detail=f"Error processing blood report: {str(e)}"
         )
-    
     finally:
         # Clean up the temporary file
-        if 'tmp_path' in locals():
-            os.unlink(tmp_path) 
+        if tmp_path and os.path.exists(tmp_path):
+            try:
+                os.unlink(tmp_path)
+            except Exception as e:
+                logger.warning(f"Failed to delete temporary file {tmp_path}: {str(e)}") 
