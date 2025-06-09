@@ -1,5 +1,15 @@
 import axios from 'axios';
-import { AnalysisResponse, Entity, IcdCode, ApiError } from '@/types/api';
+import { 
+  AnalysisResponse, 
+  Entity, 
+  IcdCode, 
+  ApiError, 
+  ChatResponse,
+  MessageContext,
+  BloodAnalysisResponse,
+  DocumentUploadResponse,
+  SummaryResponse
+} from '@/types/api';
 
 const BASE_URL = 'http://localhost:8000/api';
 
@@ -54,7 +64,7 @@ export const documentApi = {
 
   analyzeText: async (text: string): Promise<AnalysisResponse> => {
     try {
-      const response = await fetch(`${BASE_URL}/structured-analysis`, {
+      const response = await fetch(`${BASE_URL}/summary/structured-analysis`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -123,11 +133,36 @@ export const documentApi = {
 };
 
 export const chatApi = {
-  sendMessage: async (message: string, context?: any) => {
+  sendMessage: async (message: string, context?: MessageContext[]): Promise<ChatResponse> => {
     try {
-      const response = await api.post('/chat/message', { message, context });
-      return response.data;
+      console.log('Sending chat message:', message);
+      console.log('With context:', context);
+      
+      const response = await api.post('/chat/message', { 
+        text: message, 
+        context: context?.map((msg: MessageContext) => ({
+          role: msg.role,
+          content: msg.content
+        }))
+      });
+      
+      console.log('Chat API response:', response.data);
+      
+      // Handle both possible response formats
+      if (response.data.success && response.data.message) {
+        return response.data;
+      } else if (response.data.response) {
+        // If backend returns 'response' field instead of 'message'
+        return {
+          success: true,
+          message: response.data.response,
+          timestamp: response.data.timestamp || new Date().toISOString()
+        };
+      } else {
+        throw new Error('Invalid response format from chat API');
+      }
     } catch (error) {
+      console.error('Chat API error:', error);
       handleError(error);
     }
   }

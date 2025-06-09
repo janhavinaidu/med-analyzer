@@ -246,42 +246,8 @@ export const FileUpload: React.FC<FileUploadProps> = ({
             </CardContent>
           </Card>
 
-          {/* ICD Codes Section - Always visible */}
-          <Card className="border-2 border-orange-200 bg-gradient-to-br from-orange-50/50 to-white backdrop-blur-sm shadow-2xl relative overflow-hidden">
-            <div className="absolute inset-0 bg-gradient-to-r from-orange-400/5 to-transparent pointer-events-none"></div>
-            <CardHeader className="pb-6">
-              <CardTitle className="text-2xl font-bold text-orange-900 flex items-center gap-3">
-                <div className="p-2 bg-orange-100 rounded-lg">
-                  <FileText className="w-6 h-6 text-orange-600" />
-                </div>
-                Identified ICD Codes
-              </CardTitle>
-              <CardDescription className="text-orange-700">
-                Standardized medical classification codes detected in your document
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {icdCodes.length > 0 ? (
-                <div className="space-y-3">
-                  {icdCodes.map((icd, index) => (
-                    <div key={index} className="flex items-start gap-3 p-3 bg-orange-50/50 rounded-lg border border-orange-100/50">
-                      <Badge variant="secondary" className="font-mono shrink-0 bg-orange-100 text-orange-800">
-                        {icd.code}
-                      </Badge>
-                      <span className="text-gray-800">{icd.description}</span>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="p-4 text-center bg-orange-50/50 rounded-lg border border-orange-100/50">
-                  <p className="text-orange-800">No ICD codes identified yet.</p>
-                  <p className="text-sm text-orange-600 mt-1">
-                    ICD codes will appear here as they are detected in your document.
-                  </p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+        
+         
         </>
       )}
     </div>

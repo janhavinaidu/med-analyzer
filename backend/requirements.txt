@@ -1,49 +1,46 @@
-# FastAPI + server
+# FastAPI and Server
 fastapi==0.109.0
-uvicorn==0.27.0
+uvicorn[standard]==0.27.0
 python-multipart==0.0.6
-
-# PDF handling
-PyPDF2
-
-# Medical NLP
-scispacy
-spacy
-
-# GPT API integration
-openai
-
-# Summarization with pretrained transformers (T5)
-transformers
-torch
-
-# ICD-10 code matching
-rapidfuzz
-
-# Chatbot (optional: basic NLP tools)
-nltk
-
-# PDF generation
-fpdf
-reportlab
-
-# CORS
 fastapi[all]
 
-# Env management
-python-dotenv
-openai
+# Authentication and Security
+python-jose==3.3.0
+passlib[bcrypt]==1.7.4
+bcrypt==4.1.2
+pydantic==2.5.3
+
+# PDF Processing and OCR
+pdfplumber==0.10.3
+PyPDF2
+pdf2image==1.17.0
+reportlab
+fpdf
+tabula-py==2.9.0
+pytesseract==0.3.10
+
+# Machine Learning and NLP
+torch
+transformers
+spacy
+scispacy
+nltk
+rapidfuzz
 https://s3-us-west-2.amazonaws.com/ai2-s2-scispacy/releases/v0.5.3/en_core_sci_sm-0.5.3.tar.gz
 
-# New OCR-related dependencies
-pdfplumber==0.10.3
-tabula-py==2.9.0
-pandas==2.2.0
-pytesseract==0.3.10
-pdf2image==1.17.0
+# Image Processing
 opencv-python==4.9.0.80
+
+# Data Processing
+pandas==2.2.0
 numpy==1.26.3
-pydantic==2.5.3
-python-jose==3.3.0
-passlib==1.7.4
-bcrypt==4.1.2
+
+# API Integration
+openai
+
+# Utilities
+python-dotenv
+
+# Development Tools
+ipython
+jupyter

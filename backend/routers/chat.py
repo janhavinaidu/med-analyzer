@@ -1,111 +1,114 @@
 from fastapi import APIRouter, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Dict, Any, List, Optional
-import re
 from datetime import datetime
+import os
+from pathlib import Path
+from dotenv import load_dotenv
+import requests
 
 router = APIRouter()
 
+# Load environment variables
+env_path = Path(__file__).resolve().parent.parent / '.env'  
+load_dotenv(dotenv_path=env_path)
+
+api_key = os.getenv("COHERE_API_KEY")  # Changed from API_KEY
+print("Loaded COHERE_API_KEY:", api_key[:10] + "..." if api_key else None) 
+if not api_key:
+    raise RuntimeError("COHERE_API_KEY not found in environment variables. Please check your .env file.")
+
+class MessageContext(BaseModel):
+    role: str
+    content: str
+
 class Message(BaseModel):
     text: str
-    context: Optional[Dict[str, Any]] = None
+    context: Optional[List[MessageContext]] = None
 
-class ChatHistory(BaseModel):
-    messages: List[Dict[str, Any]]
-    context: Optional[Dict[str, Any]] = None
+class ChatResponse(BaseModel):
+    success: bool
+    message: str
+    timestamp: str
 
-def get_response_by_pattern(question: str, context: Optional[Dict[str, Any]] = None) -> str:
-    """
-    Get chatbot response based on pattern matching and context.
-    """
-    # Convert question to lowercase for matching
-    question_lower = question.lower()
-    
-    # Patterns for different types of questions
-    patterns = {
-        r"what (does|is|are) (the )?icd.*code": (
-            lambda: "The ICD codes represent standardized medical diagnosis codes. "
-            "In your analysis, each code corresponds to a specific medical condition. "
-            "For example, I10 represents Essential Hypertension."
-        ),
-        r"what (does|is|are) (the )?normal range": (
-            lambda: "Normal ranges vary by test. For example:\n"
-            "- Glucose: 70-100 mg/dL\n"
-            "- Hemoglobin: 13.5-17.5 g/dL\n"
-            "- White Blood Cells: 4.5-11.0 K/µL"
-        ),
-        r"what (does|is|are) (the )?confidence score": (
-            lambda: "Confidence scores indicate how certain the AI is about its predictions. "
-            "Scores above 0.9 (90%) indicate high confidence, while lower scores suggest "
-            "the prediction may need human verification."
-        ),
-        r"how (can|do) i interpret": (
-            lambda: "To interpret your results:\n"
-            "1. Check the identified medical entities\n"
-            "2. Review the ICD codes for formal diagnoses\n"
-            "3. Compare test values to normal ranges\n"
-            "4. Read the summary points for key takeaways"
-        ),
-        r"what (should|do) i do next": (
-            lambda: "For next steps:\n"
-            "1. Review the follow-up instructions in your summary\n"
-            "2. Discuss results with your healthcare provider\n"
-            "3. Schedule recommended follow-up appointments\n"
-            "4. Follow any prescribed treatment plans"
-        )
-    }
-    
-    # Check for matches and return appropriate response
-    for pattern, response_func in patterns.items():
-        if re.search(pattern, question_lower):
-            return response_func()
-    
-    # Default response if no pattern matches
-    return (
-        "I can help explain your medical analysis results, including ICD codes, "
-        "test ranges, and findings. Please ask a specific question about your results."
-    )
+def get_ai_response(prompt: str, context: List[MessageContext] = None) -> str:
+    try:
+        url = "https://api.cohere.ai/v1/chat"
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+        
+        # Build conversation history
+        chat_history = []
+        if context:
+            for msg in context:
+                chat_history.append({
+                    "role": "USER" if msg.role == "user" else "CHATBOT",
+                    "message": msg.content
+                })
+        
+        payload = {
+            "model": "command-r-plus",  # Updated to current model
+            "message": prompt,
+            "chat_history": chat_history,
+            "temperature": 0.3,  # Lower temperature for more consistent responses
+            "max_tokens": 800,   # Increased token limit
+            "preamble": "You are MedBot, a helpful and knowledgeable medical assistant AI. Provide clear, accurate, and concise medical information. Always recommend consulting healthcare professionals for personalized medical advice. Focus on being direct and helpful without unnecessary examples or role-play scenarios."
+        }
 
-@router.post("/message", response_model=Dict[str, Any])
+        response = requests.post(url, headers=headers, json=payload)
+        
+        print("Cohere API response status:", response.status_code)
+        if response.status_code != 200:
+            print("Cohere API error response:", response.text)
+            
+        response.raise_for_status()
+        data = response.json()
+
+        return data["text"].strip()
+    except requests.exceptions.RequestException as e:
+        print(f"Request error in get_ai_response: {e}")
+        raise RuntimeError(f"AI service unavailable: {e}")
+    except KeyError as e:
+        print(f"Response parsing error: {e}")
+        print("Full response:", response.text if 'response' in locals() else "No response")
+        raise RuntimeError("Invalid response format from AI service")
+    except Exception as e:
+        print(f"Unexpected error in get_ai_response: {e}")
+        raise RuntimeError(f"AI response error: {e}")
+
+@router.post("/message", response_model=ChatResponse)
 async def send_message(message: Message):
-    """
-    Process a single chat message and return a response.
-    """
     try:
-        response = get_response_by_pattern(message.text, message.context)
-        
-        return {
-            "success": True,
-            "response": response,
-            "timestamp": datetime.now().isoformat()
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error processing message: {str(e)}")
+        # Create a more direct prompt without examples
+        medical_prompt = f"""You are MedBot, a helpful medical assistant AI. Please provide a clear, concise, and helpful response to the user's question about: {message.text}
 
-@router.post("/conversation", response_model=Dict[str, Any])
-async def process_conversation(chat_history: ChatHistory):
-    """
-    Process a conversation history and return a contextual response.
-    """
-    try:
-        if not chat_history.messages:
-            raise HTTPException(status_code=400, detail="No messages provided")
+Guidelines:
+- Give direct, accurate medical information
+- Use simple, understandable language
+- Be concise but thorough
+- Always recommend consulting healthcare professionals for personalized medical advice
+- If it's about a medication, explain what it is, how it works, and common uses
+- Keep the response under 300 words for better readability
+
+User's question: {message.text}"""
         
-        # Get the last user message
-        last_message = chat_history.messages[-1]
-        
-        # Generate response considering conversation context
-        response = get_response_by_pattern(
-            last_message["text"],
-            chat_history.context
+        response_text = get_ai_response(medical_prompt, message.context)
+
+        return ChatResponse(
+            success=True,
+            message=response_text,
+            timestamp=datetime.now().isoformat()
         )
-        
-        return {
-            "success": True,
-            "response": response,
-            "timestamp": datetime.now().isoformat()
-        }
-    except HTTPException as he:
-        raise he
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error processing conversation: {str(e)}") 
+        print(f"Unexpected error in send_message: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+# Health check endpoint
+@router.get("/health")
+async def health_check():
+    return {"status": "healthy", "timestamp": datetime.now().isoformat()}

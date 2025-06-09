@@ -1,11 +1,14 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.requests import Request
-from fastapi import status
+from dotenv import load_dotenv
 
 from routers import pdf, text, analysis, summary, chat, report, blood_analysis
+
+# Load environment variables (e.g., AI_API_KEY from .env)
+load_dotenv()
 
 app = FastAPI(
     title="Blood Test Analyzer API",
@@ -13,7 +16,7 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Configure CORS
+# Configure CORS to allow frontend access
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:8080"],  # React frontend
@@ -31,7 +34,7 @@ app.include_router(chat.router, prefix="/api/chat", tags=["Chatbot"])
 app.include_router(report.router, prefix="/api/report", tags=["Report Generation"])
 app.include_router(blood_analysis.router, prefix="/api/blood", tags=["Blood Analysis"])
 
-# Add this handler to catch validation errors clearly
+# Custom error handler for validation errors
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     return JSONResponse(
@@ -39,6 +42,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         content={"success": False, "detail": exc.errors()}
     )
 
+# Run with: uvicorn main:app --reload
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
