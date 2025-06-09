@@ -1,43 +1,49 @@
-# Core Framework
-fastapi==0.95.2
-uvicorn[standard]==0.22.0
-
-# PDF Processing & OCR
-pdfplumber==0.9.0
-PyMuPDF==1.21.1
-google-cloud-vision==3.6.0
-tabula-py==2.7.0
-camelot-py[cv]==0.10.1
-opencv-python==4.7.0.72
-
-# Text Cleaning, NLP & Transformers
-openai==0.27.0
-transformers==4.30.2
-nltk==3.8.1
-spacy==3.6.0
-spacy-transformers==1.2.5
-thefuzz[speedup]>=0.19.0
-
-# Data & Machine Learning
-pandas==2.0.3
-numpy==1.25.2
-scikit-learn==1.2.2
-
-# Authentication & Security (optional but recommended)
+# Core FastAPI dependencies
+fastapi==0.104.1
+uvicorn==0.24.0
 python-multipart==0.0.6
-python-jose[cryptography]==3.3.0
-passlib[bcrypt]==1.7.4
-
-# Utilities
 python-dotenv==1.0.0
+
+# Pydantic for data validation
+pydantic==2.5.0
+
+# PDF processing
+PyPDF2==3.0.1
+
+# Machine Learning and NLP
+transformers==4.36.0
+torch==2.1.0
+tokenizers==0.15.0
+
+# Text processing and fuzzy matching
+rapidfuzz==3.5.2
+
+# HTTP requests (if needed)
 requests==2.31.0
 
-# Development Tools (optional)
-ipython==8.14.0
-jupyter==1.0.0
+# JSON handling (built-in, but listed for completeness)
+# json - built-in module
 
-# Others (for PDF to image conversion, if needed)
-pdf2image==1.16.3
+# Regular expressions (built-in)
+# re - built-in module
 
-# For environment and OS compatibility
-wheel
+# Path handling (built-in)
+# pathlib - built-in module
+
+# Logging (built-in)
+# logging - built-in module
+
+# Optional: For enhanced text processing
+nltk==3.8.1
+spacy==3.7.2
+
+# Optional: For database support if needed later
+# sqlalchemy==2.0.23
+# databases==0.8.0
+
+# Optional: For caching
+# redis==5.0.1
+
+# Development dependencies (optional)
+# pytest==7.4.3
+# pytest-asyncio==0.21.1

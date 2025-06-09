@@ -79,6 +79,7 @@ export const BloodReportChecker: React.FC<BloodReportCheckerProps> = ({
 }) => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
   const { toast } = useToast();
 
   // Drag + Drop
@@ -147,23 +148,92 @@ export const BloodReportChecker: React.FC<BloodReportCheckerProps> = ({
 
   const removeFile = () => setSelectedFile(null);
 
-  const handleDownloadPDF = () => {
-    toast({
-      title: "📄 Generating Blood Report PDF",
-      description: "Your comprehensive blood test analysis report is being prepared...",
-    });
-  };
+  const handleDownloadPDF = async () => {
+    if (!results) {
+      toast({
+        title: "❌ No Data",
+        description: "No analysis results available to download.",
+        variant: "destructive",
+      });
+      return;
+    }
 
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case "normal":
-        return <CheckCircle className="w-5 h-5 text-green-600" />;
-      case "high":
-        return <XCircle className="w-5 h-5 text-red-600" />;
-      case "low":
-        return <AlertCircle className="w-5 h-5 text-blue-600" />;
-      default:
-        return null;
+    setIsDownloading(true);
+    try {
+      // Prepare the data payload for the backend
+      const reportData = {
+        analysis_results: results,
+        summary: {
+          "Total Tests": results.tests.length.toString(),
+          "Normal Results": results.summary.normalCount.toString(),
+          "Abnormal Results": results.summary.abnormalCount.toString(),
+          "Critical Results": results.summary.criticalCount.toString(),
+          "Interpretation": results.interpretation
+        },
+        blood_tests: results.tests.map(test => ({
+          test_name: test.testName,
+          value: test.value,
+          unit: test.unit,
+          status: test.status,
+          normal_range: test.normalRange,
+          severity: test.severity || 'normal'
+        })),
+        icd_codes: results.icd_codes || [],
+        entities: [] // Add if you have entity data
+      };
+
+      console.log("Sending report data:", reportData); // Debug log
+
+      const response = await fetch("http://localhost:8000/api/reports/generate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(reportData),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      // Get the blob from response
+      const blob = await response.blob();
+      console.log("Received blob size:", blob.size); // Debug log
+      
+      if (blob.size === 0) {
+        throw new Error("Received empty PDF file");
+      }
+      
+      // Create download link
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `Blood_Report_${new Date().toISOString().split('T')[0]}.pdf`;
+      
+      // Trigger download
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      console.log("Download triggered successfully"); // Debug log
+      
+      // Clean up
+      window.URL.revokeObjectURL(url);
+
+      toast({
+        title: "✅ Download Successful",
+        description: "Blood report PDF has been downloaded successfully.",
+      });
+
+    } catch (error: any) {
+      console.error("Download error:", error);
+      toast({
+        title: "❌ Download Failed",
+        description: error.message || "Could not download the blood report PDF.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsDownloading(false);
     }
   };
 
@@ -199,9 +269,22 @@ export const BloodReportChecker: React.FC<BloodReportCheckerProps> = ({
             <p className="text-gray-600 text-lg">Comprehensive blood test interpretation</p>
           </div>
           <div className="flex gap-3">
-            <Button onClick={handleDownloadPDF} variant="outline">
-              <Download className="mr-2 w-4 h-4" />
-              Download Report
+            <Button 
+              onClick={handleDownloadPDF} 
+              variant="outline"
+              disabled={isDownloading}
+            >
+              {isDownloading ? (
+                <>
+                  <Loader className="mr-2 w-4 h-4 animate-spin" />
+                  Generating...
+                </>
+              ) : (
+                <>
+                  <Download className="mr-2 w-4 h-4" />
+                  Download Report
+                </>
+              )}
             </Button>
             <Button onClick={onReset} variant="outline">
               <ArrowUp className="mr-2 w-4 h-4" />

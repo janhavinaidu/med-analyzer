@@ -26,20 +26,17 @@ const handleError = (error: any): never => {
   console.error('API Error:', error);
   
   if (error.response) {
-    // Server responded with error
     throw {
       message: error.response.data.detail || 'An error occurred',
       status: error.response.status,
       data: error.response.data
     };
   } else if (error.request) {
-    // Request made but no response
     throw {
       message: 'Server not responding. Please try again later.',
       status: 503
     };
   } else {
-    // Something else went wrong
     throw {
       message: error.message || 'An unexpected error occurred',
       status: 500
@@ -64,20 +61,8 @@ export const documentApi = {
 
   analyzeText: async (text: string): Promise<AnalysisResponse> => {
     try {
-      const response = await fetch(`${BASE_URL}/summary/structured-analysis`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ text }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const data = await response.json();
-      return data;
+      const response = await api.post('/summary/structured-analysis', { text });
+      return response.data;
     } catch (error) {
       console.error('Error analyzing text:', error);
       return {
@@ -95,8 +80,6 @@ export const documentApi = {
   getMedicalAnalysis: async (data: { text: string }): Promise<AnalysisResponse> => {
     try {
       console.log('Sending structured analysis request:', data.text.substring(0, 100) + '...');
-      
-      // Call the new structured-analysis endpoint
       const response = await api.post('/summary/structured-analysis', { text: data.text });
       console.log('Received structured analysis response:', response.data);
 
@@ -104,7 +87,6 @@ export const documentApi = {
         throw new Error(response.data?.error || 'Analysis failed');
       }
 
-      // Ensure all required fields are present with defaults
       const result: AnalysisResponse = {
         success: true,
         primary_diagnosis: response.data.primary_diagnosis || '',
@@ -148,11 +130,9 @@ export const chatApi = {
       
       console.log('Chat API response:', response.data);
       
-      // Handle both possible response formats
       if (response.data.success && response.data.message) {
         return response.data;
       } else if (response.data.response) {
-        // If backend returns 'response' field instead of 'message'
         return {
           success: true,
           message: response.data.response,

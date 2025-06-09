@@ -7,6 +7,7 @@ import { useToast } from "@/hooks/use-toast";
 import { documentApi } from '@/services/api';
 import { AnalysisResponse } from '@/types/api';
 import { Badge } from "@/components/ui/badge";
+import { IcdCodesSection } from './IcdCodesSection'; // Import your ICD codes component
 
 interface IcdCode {
   code: string;
@@ -246,8 +247,10 @@ export const FileUpload: React.FC<FileUploadProps> = ({
             </CardContent>
           </Card>
 
-        
-         
+          {/* ADD THIS: Display ICD Codes Section */}
+          {icdCodes.length > 0 && (
+            <IcdCodesSection icdCodes={icdCodes} />
+          )}
         </>
       )}
     </div>

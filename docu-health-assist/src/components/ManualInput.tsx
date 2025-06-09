@@ -7,6 +7,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { documentApi } from '@/services/api';
 import { AnalysisResponse } from '@/types/api';
 import { Badge } from "@/components/ui/badge";
+import { IcdCodesSection } from './IcdCodesSection'; // Import your ICD codes component
 
 interface IcdCode {
   code: string;
@@ -33,15 +34,21 @@ export const ManualInput: React.FC<ManualInputProps> = ({
   // Update ICD codes when text changes
   useEffect(() => {
     const updateIcdCodes = async () => {
-      if (inputText.length < 20) return;
+      if (inputText.length < 20) {
+        setIcdCodes([]); // Clear ICD codes for short text
+        return;
+      }
 
       try {
         const result = await documentApi.analyzeText(inputText);
         if (result.icd_codes && result.icd_codes.length > 0) {
           setIcdCodes(result.icd_codes);
+        } else {
+          setIcdCodes([]); // Clear if no codes found
         }
       } catch (error) {
         console.error('Error analyzing text for ICD codes:', error);
+        setIcdCodes([]); // Clear on error
       }
     };
 
@@ -176,42 +183,10 @@ Follow-up: 6 weeks for BP recheck"
         </CardContent>
       </Card>
 
-      {/* ICD Codes Section - Always visible */}
-      <Card className="border-2 border-orange-200 bg-gradient-to-br from-orange-50/50 to-white backdrop-blur-sm shadow-2xl relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-r from-orange-400/5 to-transparent pointer-events-none"></div>
-        <CardHeader className="pb-6">
-          <CardTitle className="text-2xl font-bold text-orange-900 flex items-center gap-3">
-            <div className="p-2 bg-orange-100 rounded-lg">
-              <FileText className="w-6 h-6 text-orange-600" />
-            </div>
-            Identified ICD Codes
-          </CardTitle>
-          <CardDescription className="text-orange-700">
-            Standardized medical classification codes detected in your text
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {icdCodes.length > 0 ? (
-            <div className="space-y-3">
-              {icdCodes.map((icd, index) => (
-                <div key={index} className="flex items-start gap-3 p-3 bg-orange-50/50 rounded-lg border border-orange-100/50">
-                  <Badge variant="secondary" className="font-mono shrink-0 bg-orange-100 text-orange-800">
-                    {icd.code}
-                  </Badge>
-                  <span className="text-gray-800">{icd.description}</span>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="p-4 text-center bg-orange-50/50 rounded-lg border border-orange-100/50">
-              <p className="text-orange-800">No ICD codes identified yet.</p>
-              <p className="text-sm text-orange-600 mt-1">
-                ICD codes will appear here as they are detected in your text.
-              </p>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      {/* ADD THIS: Display ICD Codes Section */}
+      {icdCodes.length > 0 && (
+        <IcdCodesSection icdCodes={icdCodes} />
+      )}
     </div>
   );
 };

@@ -1,34 +1,45 @@
-from fastapi import APIRouter, HTTPException
+# routers/analysis.py
+from fastapi import APIRouter, HTTPException, File, UploadFile
 from pydantic import BaseModel, Field
 from typing import Dict, Any, List, Optional
-from transformers import AutoTokenizer, AutoModelForTokenClassification, pipeline
 import json
-from rapidfuzz import fuzz, process
-from utils.section_extractor import SectionExtractor
-from utils.type_converter import convert_numpy_types
+import logging
 from fastapi.responses import JSONResponse
 
-router = APIRouter()
+# Import the enhanced ICD extractor
+from utils.icd_extractor import icd_extractor
 
-# Load ICD-10 codes from JSON file
-with open("data/icd10_codes.json", "r") as f:
-    ICD10_CODES = json.load(f)
-
-# Load Hugging Face biomedical NER model
+# For NER (if you want to keep the biomedical NER)
 try:
+    from transformers import AutoTokenizer, AutoModelForTokenClassification, pipeline
     tokenizer = AutoTokenizer.from_pretrained("d4data/biomedical-ner-all")
     model = AutoModelForTokenClassification.from_pretrained("d4data/biomedical-ner-all")
     ner_pipeline = pipeline("ner", model=model, tokenizer=tokenizer, aggregation_strategy="simple")
+    NER_AVAILABLE = True
 except Exception as e:
-    raise RuntimeError(f"Failed to load biomedical NER model: {str(e)}")
+    print(f"Biomedical NER model not available: {str(e)}")
+    NER_AVAILABLE = False
 
+# For PDF text extraction
+try:
+    import PyPDF2
+    import io
+    PDF_EXTRACTION_AVAILABLE = True
+except ImportError:
+    print("PyPDF2 not available. PDF extraction will not work.")
+    PDF_EXTRACTION_AVAILABLE = False
+
+router = APIRouter()
+logger = logging.getLogger(__name__)
+
+# Pydantic models
 class TextInput(BaseModel):
     text: str = Field(..., description="The medical text to analyze")
 
     class Config:
         schema_extra = {
             "example": {
-                "text": "Patient has hypertension and is taking Lisinopril 10mg daily."
+                "text": "Patient diagnosed with type 2 diabetes and hypertension. Prescribed metformin and lisinopril."
             }
         }
 
@@ -40,6 +51,7 @@ class Entity(BaseModel):
 class IcdCode(BaseModel):
     code: str
     description: str
+    confidence: Optional[float] = None
 
 class AnalysisResponse(BaseModel):
     success: bool
@@ -48,144 +60,137 @@ class AnalysisResponse(BaseModel):
     originalText: str
     error: Optional[str] = None
 
-    class Config:
-        schema_extra = {
-            "example": {
-                "success": True,
-                "entities": [
-                    {"text": "hypertension", "type": "DISEASE", "confidence": 0.95},
-                    {"text": "Lisinopril", "type": "MEDICATION", "confidence": 0.98}
-                ],
-                "icd_codes": [
-                    {"code": "I10", "description": "Essential (primary) hypertension"}
-                ],
-                "originalText": "Patient has hypertension and is taking Lisinopril 10mg daily.",
-                "error": None
-            }
-        }
-
-class BloodTestInput(BaseModel):
-    test_name: str
-    value: float
-    unit: str
-
-class StructuredAnalysisResponse(BaseModel):
+class PrescriptionAnalysisResponse(BaseModel):
     success: bool
-    primary_diagnosis: str
-    prescribed_medication: List[str]
-    followup_instructions: str
-    medical_entities: List[Entity]
+    extracted_text: str
+    detected_conditions: List[str]
     icd_codes: List[IcdCode]
+    medications: List[str]
+    recommendations: List[str]
     error: Optional[str] = None
 
-    class Config:
-        schema_extra = {
-            "example": {
-                "success": True,
-                "primary_diagnosis": "Diagnosed with acute pharyngitis.",
-                "prescribed_medication": [
-                    "Amoxicillin 500mg twice daily",
-                    "Ibuprofen 200mg as needed"
-                ],
-                "followup_instructions": "Return in 1 week if symptoms persist.",
-                "medical_entities": [
-                    {"text": "pharyngitis", "type": "DISEASE", "confidence": 0.92},
-                    {"text": "Amoxicillin", "type": "MEDICATION", "confidence": 0.95}
-                ],
-                "icd_codes": [
-                    {"code": "J02.9", "description": "Acute pharyngitis, unspecified"}
-                ],
-                "error": None
-            }
-        }
+def extract_text_from_pdf(file_content: bytes) -> str:
+    """Extract text from PDF content"""
+    if not PDF_EXTRACTION_AVAILABLE:
+        raise HTTPException(status_code=500, detail="PDF extraction not available")
+    
+    try:
+        pdf_file = io.BytesIO(file_content)
+        pdf_reader = PyPDF2.PdfReader(pdf_file)
+        
+        extracted_text = ""
+        for page in pdf_reader.pages:
+            extracted_text += page.extract_text() + "\n"
+        
+        return extracted_text.strip()
+    except Exception as e:
+        logger.error(f"Error extracting text from PDF: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error extracting text from PDF: {str(e)}")
 
-def extract_entities(text: str) -> List[Dict[str, Any]]:
-    """
-    Extract biomedical entities using Hugging Face transformer.
-    Returns confidence scores as native Python floats.
-    """
+def extract_entities_with_ner(text: str) -> List[Dict[str, Any]]:
+    """Extract biomedical entities using NER if available"""
+    if not NER_AVAILABLE:
+        return []
+    
     try:
         results = ner_pipeline(text)
         entities = []
         for ent in results:
-            # Convert NumPy float32/float64 to native Python float
             confidence = float(ent["score"])
             entities.append({
-                "text": str(ent["word"]),  # Ensure string type
-                "type": str(ent["entity_group"]),  # Ensure string type
-                "confidence": round(confidence, 3)  # Native Python float
+                "text": str(ent["word"]),
+                "type": str(ent["entity_group"]),
+                "confidence": round(confidence, 3)
             })
         return entities
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error extracting entities: {str(e)}"
-        )
+        logger.error(f"Error extracting entities: {str(e)}")
+        return []
 
-def predict_icd_codes(text: str) -> List[Dict[str, str]]:
-    """
-    Predict ICD-10 codes using fuzzy matching.
-    Returns all strings as native Python strings.
-    """
-    try:
-        medical_terms = [str(ent["word"]) for ent in ner_pipeline(text)]  # Ensure string type
-        
-        predicted_codes = []
-        for term in medical_terms:
-            matches = process.extract(
-                term,
-                [(str(code), str(desc)) for code, desc in ICD10_CODES.items()],  # Ensure string type
-                limit=1,
-                scorer=fuzz.token_set_ratio
-            )
-            
-            if matches and matches[0][1] > 80:  # matches[0][1] is already a native Python int
-                code, desc = matches[0][0]
-                predicted_codes.append({
-                    "code": str(code),  # Ensure string type
-                    "description": str(desc)  # Ensure string type
-                })
-        
-        return predicted_codes
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error predicting ICD codes: {str(e)}"
-        )
+def extract_medications_from_text(text: str) -> List[str]:
+    """Extract medication names from text using pattern matching"""
+    import re
+    
+    # Common medication patterns
+    medication_patterns = [
+        r'prescribed\s+([a-zA-Z]+(?:\s+\d+\s*mg)?)',
+        r'taking\s+([a-zA-Z]+(?:\s+\d+\s*mg)?)',
+        r'medication:\s*([a-zA-Z]+(?:\s+\d+\s*mg)?)',
+        r'drug:\s*([a-zA-Z]+(?:\s+\d+\s*mg)?)',
+        r'([a-zA-Z]+)\s+\d+\s*mg',
+        r'([a-zA-Z]+)\s+tablets?',
+    ]
+    
+    medications = set()
+    text_lower = text.lower()
+    
+    for pattern in medication_patterns:
+        matches = re.finditer(pattern, text_lower, re.IGNORECASE)
+        for match in matches:
+            med_name = match.group(1).strip()
+            if len(med_name) > 2:  # Filter out very short matches
+                medications.add(med_name.title())
+    
+    return list(medications)
 
-def analyze_blood_test(test: BloodTestInput) -> Dict[str, Any]:
-    NORMAL_RANGES = {
-        "glucose": {"min": 70, "max": 100, "unit": "mg/dL"},
-        "hemoglobin": {"min": 13.5, "max": 17.5, "unit": "g/dL"},
-        "wbc": {"min": 4.5, "max": 11.0, "unit": "K/µL"},
-    }
-
-    test_key = test.test_name.lower()
-    if test_key in NORMAL_RANGES:
-        range_data = NORMAL_RANGES[test_key]
-        if range_data["unit"] != test.unit:
-            raise HTTPException(status_code=400, detail=f"Invalid unit. Expected {range_data['unit']}")
-
-        status = "normal"
-        if test.value < range_data["min"]:
-            status = "low"
-        elif test.value > range_data["max"]:
-            status = "high"
-
-        return {
-            "test_name": test.test_name,
-            "value": test.value,
-            "unit": test.unit,
-            "status": status,
-            "normal_range": f"{range_data['min']} - {range_data['max']} {range_data['unit']}"
-        }
-    else:
-        raise HTTPException(status_code=400, detail=f"Unknown test: {test.test_name}")
+def generate_recommendations(icd_codes: List[Dict], medications: List[str]) -> List[str]:
+    """Generate basic recommendations based on detected conditions"""
+    recommendations = []
+    
+    # Extract condition types from ICD codes
+    condition_types = []
+    for code_info in icd_codes:
+        description = code_info["description"].lower()
+        if "diabetes" in description:
+            condition_types.append("diabetes")
+        elif "hypertension" in description:
+            condition_types.append("hypertension")
+        elif "heart" in description or "cardiac" in description:
+            condition_types.append("cardiac")
+        elif "asthma" in description or "respiratory" in description:
+            condition_types.append("respiratory")
+    
+    # Generate recommendations based on conditions
+    if "diabetes" in condition_types:
+        recommendations.extend([
+            "Monitor blood glucose levels regularly",
+            "Follow diabetic diet recommendations",
+            "Regular exercise as advised by physician"
+        ])
+    
+    if "hypertension" in condition_types:
+        recommendations.extend([
+            "Monitor blood pressure regularly",
+            "Limit sodium intake",
+            "Maintain healthy weight"
+        ])
+    
+    if "cardiac" in condition_types:
+        recommendations.extend([
+            "Regular cardiac follow-up appointments",
+            "Avoid excessive physical exertion",
+            "Take medications as prescribed"
+        ])
+    
+    if medications:
+        recommendations.append("Take all prescribed medications as directed")
+        recommendations.append("Do not stop medications without consulting physician")
+    
+    # Remove duplicates while preserving order
+    seen = set()
+    unique_recommendations = []
+    for rec in recommendations:
+        if rec not in seen:
+            seen.add(rec)
+            unique_recommendations.append(rec)
+    
+    return unique_recommendations
 
 @router.post("/entities", response_model=Dict[str, Any])
 async def get_entities(input_data: TextInput):
+    """Extract medical entities from text"""
     try:
-        entities = extract_entities(input_data.text)
+        entities = extract_entities_with_ner(input_data.text)
         return {
             "success": True,
             "entities": entities
@@ -195,8 +200,9 @@ async def get_entities(input_data: TextInput):
 
 @router.post("/icd-codes", response_model=Dict[str, Any])
 async def get_icd_codes(input_data: TextInput):
+    """Extract ICD codes from medical text"""
     try:
-        codes = predict_icd_codes(input_data.text)
+        codes = icd_extractor.identify_icd_codes_from_text(input_data.text)
         return {
             "success": True,
             "icd_codes": codes
@@ -204,44 +210,18 @@ async def get_icd_codes(input_data: TextInput):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error predicting ICD codes: {str(e)}")
 
-@router.post("/blood-test", response_model=Dict[str, Any])
-async def analyze_blood_test_values(test: BloodTestInput):
-    try:
-        result = analyze_blood_test(test)
-        return {
-            "success": True,
-            "analysis": result
-        }
-    except HTTPException as he:
-        raise he
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error analyzing blood test: {str(e)}")
-
 @router.post("/full", response_model=AnalysisResponse)
 async def full_analysis(input_data: TextInput):
-    """
-    Perform full analysis on medical text.
-    
-    Args:
-        input_data (TextInput): The input text to analyze
-        
-    Returns:
-        AnalysisResponse: The analysis results including entities and ICD codes
-        
-    Raises:
-        HTTPException: If text is empty or processing fails
-    """
+    """Perform comprehensive analysis on medical text"""
     try:
-        # Validate input
         if not input_data.text.strip():
-            raise HTTPException(
-                status_code=400,
-                detail="Text input cannot be empty"
-            )
+            raise HTTPException(status_code=400, detail="Text input cannot be empty")
 
-        # Extract entities and predict ICD codes
-        entities = extract_entities(input_data.text)
-        icd_codes = predict_icd_codes(input_data.text)
+        # Extract entities using NER
+        entities = extract_entities_with_ner(input_data.text)
+        
+        # Extract ICD codes using enhanced system
+        icd_codes = icd_extractor.identify_icd_codes_from_text(input_data.text)
 
         return AnalysisResponse(
             success=True,
@@ -251,13 +231,9 @@ async def full_analysis(input_data: TextInput):
         )
 
     except HTTPException as he:
-        # Re-raise HTTP exceptions as is
         raise he
     except Exception as e:
-        # Log the error (you should add proper logging)
-        print(f"Error in full_analysis: {str(e)}")
-        
-        # Return a structured error response
+        logger.error(f"Error in full_analysis: {str(e)}")
         return AnalysisResponse(
             success=False,
             entities=[],
@@ -266,70 +242,136 @@ async def full_analysis(input_data: TextInput):
             error=f"Error performing analysis: {str(e)}"
         )
 
-@router.post("/structured-analysis")
-async def structured_analysis(input_data: TextInput):
-    """
-    Perform structured analysis on medical text, extracting sections, entities, and ICD codes.
-    Returns all numeric values as native Python types.
-    
-    Args:
-        input_data (TextInput): The input text to analyze
-        
-    Returns:
-        JSONResponse containing:
-        - primary_diagnosis (List[str]): List of diagnoses
-        - prescribed_medication (List[str]): List of medications
-        - followup_instructions (List[str]): List of follow-up instructions
-        - medical_entities (List[Entity]): List of extracted medical entities with native Python confidence scores
-        - icd_codes (List[IcdCode]): List of relevant ICD codes
-        
-    Raises:
-        HTTPException: If text is empty or processing fails
-    """
+@router.post("/prescription-text", response_model=PrescriptionAnalysisResponse)
+async def analyze_prescription_text(input_data: TextInput):
+    """Analyze prescription text for conditions, medications, and ICD codes"""
     try:
-        # Validate input
-        if not input_data.text.strip():
-            raise HTTPException(
-                status_code=400,
-                detail="Input text cannot be empty"
-            )
+        text = input_data.text.strip()
+        if not text:
+            raise HTTPException(status_code=400, detail="Text input cannot be empty")
 
-        # Extract structured sections
-        section_extractor = SectionExtractor()
-        sections = section_extractor.extract_sections(input_data.text)
+        # Extract ICD codes and conditions
+        icd_codes = icd_extractor.identify_icd_codes_from_text(text)
         
-        # Extract entities and ICD codes
-        entities = extract_entities(input_data.text)
-        icd_codes = predict_icd_codes(input_data.text)
+        # Extract detected conditions (readable format)
+        detected_conditions = []
+        for code_info in icd_codes:
+            detected_conditions.append(code_info["description"])
         
-        # Prepare response data
-        response_data = {
-            "success": True,
-            "primary_diagnosis": sections["primary_diagnosis"],
-            "prescribed_medication": sections["prescribed_medication"],
-            "followup_instructions": sections["followup_instructions"],
-            "medical_entities": entities,
-            "icd_codes": icd_codes,
-            "error": None
-        }
+        # Extract medications
+        medications = extract_medications_from_text(text)
         
-        # Convert any NumPy types to native Python types
-        response_data = convert_numpy_types(response_data)
-        
-        # Return as JSONResponse to ensure proper serialization
-        return JSONResponse(content=response_data)
-        
-    except Exception as e:
-        error_response = {
-            "success": False,
-            "error": f"Error performing structured analysis: {str(e)}",
-            "primary_diagnosis": [],
-            "prescribed_medication": [],
-            "followup_instructions": [],
-            "medical_entities": [],
-            "icd_codes": []
-        }
-        return JSONResponse(
-            status_code=500,
-            content=error_response
+        # Generate recommendations
+        recommendations = generate_recommendations(icd_codes, medications)
+
+        return PrescriptionAnalysisResponse(
+            success=True,
+            extracted_text=text,
+            detected_conditions=detected_conditions,
+            icd_codes=icd_codes,
+            medications=medications,
+            recommendations=recommendations
         )
+
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logger.error(f"Error in prescription text analysis: {str(e)}")
+        return PrescriptionAnalysisResponse(
+            success=False,
+            extracted_text=input_data.text,
+            detected_conditions=[],
+            icd_codes=[],
+            medications=[],
+            recommendations=[],
+            error=f"Error analyzing prescription: {str(e)}"
+        )
+
+@router.post("/prescription-pdf", response_model=PrescriptionAnalysisResponse)
+async def analyze_prescription_pdf(file: UploadFile = File(...)):
+    """Analyze prescription PDF for conditions, medications, and ICD codes"""
+    try:
+        # Validate file type
+        if not file.filename.lower().endswith('.pdf'):
+            raise HTTPException(status_code=400, detail="Only PDF files are supported")
+        
+        # Read file content
+        file_content = await file.read()
+        
+        # Extract text from PDF
+        extracted_text = extract_text_from_pdf(file_content)
+        
+        if not extracted_text.strip():
+            raise HTTPException(status_code=400, detail="No text could be extracted from the PDF")
+
+        # Analyze the extracted text
+        icd_codes = icd_extractor.identify_icd_codes_from_text(extracted_text)
+        
+        # Extract detected conditions
+        detected_conditions = []
+        for code_info in icd_codes:
+            detected_conditions.append(code_info["description"])
+        
+        # Extract medications
+        medications = extract_medications_from_text(extracted_text)
+        
+        # Generate recommendations
+        recommendations = generate_recommendations(icd_codes, medications)
+
+        return PrescriptionAnalysisResponse(
+            success=True,
+            extracted_text=extracted_text,
+            detected_conditions=detected_conditions,
+            icd_codes=icd_codes,
+            medications=medications,
+            recommendations=recommendations
+        )
+
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logger.error(f"Error in prescription PDF analysis: {str(e)}")
+        return PrescriptionAnalysisResponse(
+            success=False,
+            extracted_text="",
+            detected_conditions=[],
+            icd_codes=[],
+            medications=[],
+            recommendations=[],
+            error=f"Error analyzing prescription PDF: {str(e)}"
+        )
+
+@router.get("/search-icd")
+async def search_icd_codes(query: str, limit: int = 10):
+    """Search ICD codes by description or code"""
+    try:
+        results = icd_extractor.search_codes_by_description(query, limit)
+        return {
+            "success": True,
+            "results": results,
+            "count": len(results)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error searching ICD codes: {str(e)}")
+
+@router.get("/test-icd-extraction")
+async def test_icd_extraction():
+    """Test endpoint to verify ICD extraction is working"""
+    test_text = "Patient diagnosed with type 2 diabetes and hypertension. Also has history of asthma."
+    
+    try:
+        results = icd_extractor.identify_icd_codes_from_text(test_text)
+        return {
+            "success": True,
+            "test_text": test_text,
+            "extracted_codes": results,
+            "icd_codes_loaded": len(icd_extractor.icd_codes),
+            "condition_mappings": len(icd_extractor.condition_mappings)
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "icd_codes_loaded": len(icd_extractor.icd_codes),
+            "condition_mappings": len(icd_extractor.condition_mappings)
+        }
