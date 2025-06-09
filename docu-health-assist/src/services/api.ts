@@ -62,7 +62,17 @@ export const documentApi = {
   analyzeText: async (text: string): Promise<AnalysisResponse> => {
     try {
       const response = await api.post('/summary/structured-analysis', { text });
-      return response.data;
+      
+      // Add ICD codes
+      const icdResponse = await api.post('/icd/analyze', { text });
+      console.log('ICD Response:', icdResponse.data);
+      
+      const result = {
+        ...response.data,
+        icd_codes: icdResponse.data.icd_codes || []
+      };
+      console.log('Combined Result:', result);
+      return result;
     } catch (error) {
       console.error('Error analyzing text:', error);
       return {
@@ -79,10 +89,13 @@ export const documentApi = {
 
   getMedicalAnalysis: async (data: { text: string }): Promise<AnalysisResponse> => {
     try {
-      console.log('Sending structured analysis request:', data.text.substring(0, 100) + '...');
+      console.log('Analyzing text:', data.text.substring(0, 100) + '...');
       const response = await api.post('/summary/structured-analysis', { text: data.text });
-      console.log('Received structured analysis response:', response.data);
-
+      
+      // Add ICD codes
+      const icdResponse = await api.post('/icd/analyze', { text: data.text });
+      console.log('ICD Response:', icdResponse.data);
+      
       if (!response.data || !response.data.success) {
         throw new Error(response.data?.error || 'Analysis failed');
       }
@@ -93,10 +106,10 @@ export const documentApi = {
         prescribed_medication: response.data.prescribed_medication || [],
         followup_instructions: response.data.followup_instructions || '',
         medical_entities: response.data.medical_entities || [],
-        icd_codes: response.data.icd_codes || [],
+        icd_codes: icdResponse.data.icd_codes || [],
         error: response.data.error
       };
-
+      console.log('Final Analysis Result:', result);
       return result;
     } catch (error) {
       console.error('Error in getMedicalAnalysis:', error);

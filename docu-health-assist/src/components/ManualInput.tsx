@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -30,31 +30,6 @@ export const ManualInput: React.FC<ManualInputProps> = ({
   const [inputText, setInputText] = useState('');
   const [icdCodes, setIcdCodes] = useState<IcdCode[]>([]);
   const { toast } = useToast();
-
-  // Update ICD codes when text changes
-  useEffect(() => {
-    const updateIcdCodes = async () => {
-      if (inputText.length < 20) {
-        setIcdCodes([]); // Clear ICD codes for short text
-        return;
-      }
-
-      try {
-        const result = await documentApi.analyzeText(inputText);
-        if (result.icd_codes && result.icd_codes.length > 0) {
-          setIcdCodes(result.icd_codes);
-        } else {
-          setIcdCodes([]); // Clear if no codes found
-        }
-      } catch (error) {
-        console.error('Error analyzing text for ICD codes:', error);
-        setIcdCodes([]); // Clear on error
-      }
-    };
-
-    const debounceTimer = setTimeout(updateIcdCodes, 1000);
-    return () => clearTimeout(debounceTimer);
-  }, [inputText]);
 
   const handleAnalyze = async () => {
     if (!inputText.trim()) {

@@ -65,13 +65,115 @@ export const AnalysisResults: React.FC<AnalysisResultsProps> = ({ data, onReset 
     );
   }
 
-  const handleDownloadPDF = () => {
-    // Animated feedback
-    toast({
-      title: "✅ PDF Generation Started",
-      description: "Your comprehensive medical analysis report is being prepared...",
-      className: "animate-scale-in",
-    });
+  const handleDownloadPDF = async () => {
+    try {
+      // Format ICD codes to match backend expectation
+      const formattedIcdCodes = data.icd_codes?.map(icd => ({
+        code: icd.code,
+        description: icd.description
+      })) || [];
+
+      // Format medical entities to match backend expectation
+      const formattedEntities = data.medical_entities?.map(entity => ({
+        text: entity.text,
+        type: entity.type,
+        confidence: entity.confidence
+      })) || [];
+
+      // Prepare the data for the report
+      const reportData = {
+        patient_info: null, // Optional patient info
+        analysis_results: {
+          primary_diagnosis: data.primary_diagnosis || "",
+          prescribed_medication: data.prescribed_medication || [],
+          followup_instructions: data.followup_instructions || "",
+          medical_entities: formattedEntities,
+          icd_codes: formattedIcdCodes
+        },
+        summary: {
+          "Primary Diagnosis": data.primary_diagnosis || "Not available",
+          "Medications": `${data.prescribed_medication?.length || 0} prescribed`,
+          "Medical Entities": `${data.medical_entities?.length || 0} identified`,
+          "ICD Codes": `${data.icd_codes?.length || 0} codes found`
+        },
+        entities: formattedEntities,
+        icd_codes: formattedIcdCodes,
+        blood_tests: null // Optional blood test data
+      };
+
+      console.log('Sending report data:', JSON.stringify(reportData, null, 2));
+
+      // Show loading toast
+      toast({
+        title: "✅ PDF Generation Started",
+        description: "Your comprehensive medical analysis report is being prepared...",
+        className: "animate-scale-in",
+      });
+
+      // Make the API call
+      const response = await fetch("http://localhost:8000/api/report/generate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(reportData),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        let errorMessage = 'Failed to generate report';
+        
+        if (errorData.detail) {
+          if (Array.isArray(errorData.detail)) {
+            // Handle validation errors array
+            errorMessage = errorData.detail.map(err => err.msg || err.message || JSON.stringify(err)).join('\n');
+          } else if (typeof errorData.detail === 'object') {
+            // Handle object error
+            errorMessage = errorData.detail.message || JSON.stringify(errorData.detail);
+          } else {
+            // Handle string error
+            errorMessage = errorData.detail;
+          }
+        }
+        
+        throw new Error(errorMessage);
+      }
+
+      // Get the blob from response
+      const blob = await response.blob();
+      
+      if (blob.size === 0) {
+        throw new Error("Received empty PDF file");
+      }
+      
+      // Create download link
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `Medical_Analysis_${new Date().toISOString().split('T')[0]}.pdf`;
+      
+      // Trigger download
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      // Clean up
+      window.URL.revokeObjectURL(url);
+
+      // Show success toast
+      toast({
+        title: "✅ Download Complete",
+        description: "Your medical analysis report has been downloaded successfully.",
+      });
+
+    } catch (error) {
+      console.error("Download error:", error);
+      toast({
+        title: "❌ Download Failed",
+        description: error.message || "Could not download the medical report PDF.",
+        variant: "destructive",
+      });
+    }
   };
 
   const getEntityBadgeStyle = (type: string) => {

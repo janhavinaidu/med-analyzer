@@ -81,12 +81,6 @@ export const FileUpload: React.FC<FileUploadProps> = ({
       setExtractedText(uploadResult.text);
       setShowTextEditor(true);
 
-      // Get initial ICD codes
-      const analysisResult = await documentApi.analyzeText(uploadResult.text);
-      if (analysisResult.icd_codes && analysisResult.icd_codes.length > 0) {
-        setIcdCodes(analysisResult.icd_codes);
-      }
-
       toast({
         title: "✅ Text Extraction Complete",
         description: "Text extracted successfully. Please review and edit if needed.",

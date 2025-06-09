@@ -32,7 +32,6 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { bloodApi } from "@/services/api";
-import { IcdCodesSection } from './IcdCodesSection';
 
 // Interfaces
 interface BloodTest {
@@ -54,10 +53,6 @@ interface BloodData {
   };
   interpretation: string;
   recommendations: string[];
-  icd_codes?: Array<{
-    code: string;
-    description: string;
-  }>;
 }
 
 interface BloodReportCheckerProps {
@@ -178,7 +173,7 @@ export const BloodReportChecker: React.FC<BloodReportCheckerProps> = ({
           normal_range: test.normalRange,
           severity: test.severity || 'normal'
         })),
-        icd_codes: results.icd_codes || [],
+        icd_codes: [],
         entities: [] // Add if you have entity data
       };
 
