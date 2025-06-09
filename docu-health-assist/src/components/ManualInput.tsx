@@ -67,39 +67,6 @@ export const ManualInput: React.FC<ManualInputProps> = ({
     }
   };
 
-  const handleCorrectText = async () => {
-    if (!inputText.trim()) {
-      onError('Please enter text to correct');
-      return;
-    }
-
-    toast({
-      title: "🔄 Text Correction Started",
-      description: "AI is reviewing and correcting the entered text...",
-    });
-
-    try {
-      const result = await documentApi.analyzeText(inputText);
-      if (result.success) {
-        // Update ICD codes if available
-        if (result.icd_codes && result.icd_codes.length > 0) {
-          setIcdCodes(result.icd_codes);
-        }
-      }
-      
-      toast({
-        title: "✅ Text Corrected",
-        description: "Text has been reviewed and corrected for medical terminology.",
-      });
-    } catch (error: any) {
-      toast({
-        title: "❌ Correction Failed",
-        description: error.message || 'Failed to correct text',
-        variant: "destructive",
-      });
-    }
-  };
-
   return (
     <div className="space-y-6">
       <Card className="bg-white/90 backdrop-blur-sm border-gray-200/50 shadow-2xl">
@@ -138,15 +105,7 @@ Follow-up: 6 weeks for BP recheck"
             )}
           </div>
           
-          <div className="flex gap-4 justify-end">
-            <Button
-              variant="outline"
-              onClick={handleCorrectText}
-              disabled={isLoading || !inputText.trim()}
-              className="bg-white hover:bg-gray-50"
-            >
-              Correct Text
-            </Button>
+          <div className="flex justify-end">
             <Button
               onClick={handleAnalyze}
               disabled={isLoading || !inputText.trim()}
@@ -158,7 +117,7 @@ Follow-up: 6 weeks for BP recheck"
         </CardContent>
       </Card>
 
-      {/* ADD THIS: Display ICD Codes Section */}
+      {/* Display ICD Codes Section */}
       {icdCodes.length > 0 && (
         <IcdCodesSection icdCodes={icdCodes} />
       )}
