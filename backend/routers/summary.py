@@ -1,10 +1,16 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, File, UploadFile
 from pydantic import BaseModel, Field
 from typing import Dict, Any, List, Set, Optional
 from transformers import T5ForConditionalGeneration, T5Tokenizer
 import torch
 from utils.section_extractor import SectionExtractor
 import logging
+import json
+from fastapi.responses import JSONResponse
+
+# Import the enhanced ICD extractor
+from utils.icd_extractor import icd_extractor
+from routers.analysis import extract_entities_with_ner  # Import the entity extraction function
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -173,13 +179,17 @@ async def get_structured_analysis(input_data: TextInput):
             except Exception as e:
                 logger.error("Error in T5 generation: %s", str(e))
 
+        # Extract medical entities using NER
+        medical_entities = extract_entities_with_ner(input_data.text)
+        logger.info("Extracted medical entities: %s", medical_entities)
+
         # Format response
         response = MedicalAnalysisResponse(
             success=True,
             primary_diagnosis=diagnosis[0] if diagnosis else "",
             prescribed_medication=treatments if treatments else [],
             followup_instructions=history[0] if history else "",
-            medical_entities=[],  # TODO: Add entity extraction
+            medical_entities=medical_entities,  # Add extracted entities
             icd_codes=[],  # TODO: Add ICD code prediction
             error=None
         )

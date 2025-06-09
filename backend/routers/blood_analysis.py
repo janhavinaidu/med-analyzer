@@ -397,6 +397,127 @@ def generate_recommendations(abnormal_tests: List[BloodTestResult], critical_tes
 
     return list(recommendations)
 
+def extract_medical_entities_from_blood_tests(tests: List[BloodTestResult]) -> List[Dict[str, Any]]:
+    """Extract comprehensive medical entities from blood test results."""
+    entities = []
+    
+    # Define entity categories and their patterns
+    test_categories = {
+        "BLOOD_COUNT": {
+            "tests": ["hemoglobin", "hematocrit", "rbc", "wbc", "platelets", "mcv", "mch", "mchc"],
+            "description": "Complete Blood Count"
+        },
+        "METABOLIC": {
+            "tests": ["glucose", "cholesterol", "triglycerides", "hdl", "ldl", "alt", "ast", "albumin"],
+            "description": "Metabolic Panel"
+        },
+        "ELECTROLYTES": {
+            "tests": ["sodium", "potassium", "chloride", "bicarbonate", "calcium", "magnesium", "phosphate"],
+            "description": "Electrolyte Panel"
+        },
+        "KIDNEY": {
+            "tests": ["creatinine", "bun", "egfr", "uric_acid"],
+            "description": "Kidney Function"
+        },
+        "LIVER": {
+            "tests": ["alt", "ast", "alp", "ggt", "bilirubin", "protein"],
+            "description": "Liver Function"
+        }
+    }
+    
+    # Track which categories have abnormal results
+    abnormal_categories = set()
+    
+    # Process each test result
+    for test in tests:
+        test_name = test.testName.lower()
+        
+        # Add the test itself as a medical entity
+        entities.append({
+            "text": test.testName,
+            "type": "LAB_TEST",
+            "confidence": 1.0,
+            "value": f"{test.value} {test.unit}",
+            "status": test.status,
+            "normalRange": test.normalRange
+        })
+        
+        # If test is abnormal, add it as a condition entity
+        if test.status != TestStatus.NORMAL:
+            condition_text = f"{test.status.capitalize()} {test.testName}"
+            entities.append({
+                "text": condition_text,
+                "type": "CONDITION",
+                "confidence": 1.0,
+                "details": f"{test.value} {test.unit} (Normal: {test.normalRange})"
+            })
+            
+            # Add severity if present
+            if test.severity:
+                entities.append({
+                    "text": f"{test.severity.capitalize()} {condition_text}",
+                    "type": "SEVERITY",
+                    "confidence": 1.0,
+                    "details": test.suggestion if test.suggestion else ""
+                })
+        
+        # Check which category this test belongs to
+        for category, info in test_categories.items():
+            if any(test_pattern in test_name for test_pattern in info["tests"]):
+                if test.status != TestStatus.NORMAL:
+                    abnormal_categories.add(category)
+                break
+    
+    # Add category-level entities for abnormal categories
+    for category in abnormal_categories:
+        entities.append({
+            "text": test_categories[category]["description"],
+            "type": "TEST_PANEL",
+            "confidence": 1.0,
+            "details": f"Abnormalities detected in {test_categories[category]['description']}"
+        })
+    
+    # Add clinical interpretations based on patterns
+    clinical_patterns = {
+        "ANEMIA": {
+            "conditions": [
+                lambda t: any(test.testName.lower() == "hemoglobin" and test.status == TestStatus.LOW for test in tests),
+                lambda t: any(test.testName.lower() == "hematocrit" and test.status == TestStatus.LOW for test in tests)
+            ],
+            "text": "Possible Anemia"
+        },
+        "INFECTION": {
+            "conditions": [
+                lambda t: any(test.testName.lower() == "wbc" and test.status == TestStatus.HIGH for test in tests)
+            ],
+            "text": "Possible Infection/Inflammation"
+        },
+        "DIABETES_RISK": {
+            "conditions": [
+                lambda t: any(test.testName.lower() == "glucose_fasting" and test.status == TestStatus.HIGH for test in tests)
+            ],
+            "text": "Elevated Diabetes Risk"
+        },
+        "BLEEDING_RISK": {
+            "conditions": [
+                lambda t: any(test.testName.lower() == "platelets" and test.status == TestStatus.LOW for test in tests)
+            ],
+            "text": "Increased Bleeding Risk"
+        }
+    }
+    
+    # Check for clinical patterns
+    for pattern_name, pattern_info in clinical_patterns.items():
+        if all(condition(tests) for condition in pattern_info["conditions"]):
+            entities.append({
+                "text": pattern_info["text"],
+                "type": "CLINICAL_INTERPRETATION",
+                "confidence": 0.9,
+                "details": f"Based on abnormal test results"
+            })
+    
+    return entities
+
 @router.post("/upload-blood-report")
 async def upload_blood_report(file: UploadFile):
     """
@@ -438,6 +559,9 @@ async def upload_blood_report(file: UploadFile):
             # Analyze the test results
             analysis = analyze_blood_tests([BloodTest(**test) for test in test_results])
             
+            # Extract medical entities
+            medical_entities = extract_medical_entities_from_blood_tests(analysis.tests)
+            
             # Format response to match medical document analysis
             abnormal_tests = [test for test in analysis.tests if test.status != "normal"]
             critical_tests = [test for test in abnormal_tests if test.severity == "severe"]
@@ -464,14 +588,7 @@ async def upload_blood_report(file: UploadFile):
                 "primary_diagnosis": diagnosis[0] if diagnosis else "All blood test results are normal",
                 "prescribed_medication": treatments,
                 "followup_instructions": history[0] if history else "",
-                "medical_entities": [
-                    {
-                        "text": test.testName,
-                        "type": "TEST",
-                        "confidence": 1.0
-                    }
-                    for test in analysis.tests
-                ],
+                "medical_entities": medical_entities,
                 "icd_codes": [],  # TODO: Add ICD code mapping for blood test abnormalities
                 "blood_data": {
                     "tests": analysis.tests,

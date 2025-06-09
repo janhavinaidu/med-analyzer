@@ -1,10 +1,15 @@
 # routers/analysis.py
 from fastapi import APIRouter, HTTPException, File, UploadFile
 from pydantic import BaseModel, Field
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Set
 import json
 import logging
 from fastapi.responses import JSONResponse
+import re
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Import the enhanced ICD extractor
 from utils.icd_extractor import icd_extractor
@@ -17,7 +22,7 @@ try:
     ner_pipeline = pipeline("ner", model=model, tokenizer=tokenizer, aggregation_strategy="simple")
     NER_AVAILABLE = True
 except Exception as e:
-    print(f"Biomedical NER model not available: {str(e)}")
+    logger.error(f"Biomedical NER model not available: {str(e)}")
     NER_AVAILABLE = False
 
 # For PDF text extraction
@@ -30,7 +35,6 @@ except ImportError:
     PDF_EXTRACTION_AVAILABLE = False
 
 router = APIRouter()
-logger = logging.getLogger(__name__)
 
 # Pydantic models
 class TextInput(BaseModel):
@@ -87,6 +91,86 @@ def extract_text_from_pdf(file_content: bytes) -> str:
         logger.error(f"Error extracting text from PDF: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error extracting text from PDF: {str(e)}")
 
+def clean_entity_text(text: str) -> str:
+    """Clean and normalize entity text."""
+    # Remove unwanted characters and normalize whitespace
+    text = re.sub(r'[,.;:!?"\']', '', text)
+    text = re.sub(r'\s+', ' ', text)
+    return text.strip()
+
+def is_valid_medical_term(text: str) -> bool:
+    """Check if the text appears to be a valid medical term."""
+    # Common medical word endings
+    medical_suffixes = {
+        'itis', 'emia', 'osis', 'pathy', 'algia', 'ectomy', 'plasty',
+        'otomy', 'ology', 'gram', 'graph', 'scopy', 'tomy', 'opsy'
+    }
+    
+    # Common medical prefixes
+    medical_prefixes = {
+        'hyper', 'hypo', 'anti', 'poly', 'hemi', 'neo', 'post',
+        'pre', 'peri', 'endo', 'exo', 'meta', 'para', 'dys'
+    }
+    
+    text_lower = text.lower()
+    
+    # Check for medical suffixes and prefixes
+    if any(text_lower.endswith(suffix) for suffix in medical_suffixes):
+        return True
+    if any(text_lower.startswith(prefix) for prefix in medical_prefixes):
+        return True
+        
+    return False
+
+def categorize_entity(text: str, original_type: str) -> str:
+    """Categorize the entity into a more specific medical category."""
+    text_lower = text.lower()
+    
+    # Define category patterns
+    patterns = {
+        'DISEASE': [
+            r'disease', r'syndrome', r'disorder', r'infection', r'itis',
+            r'emia', r'osis', r'pathy', r'cancer', r'tumor', r'carcinoma',
+            r'failure', r'deficiency'
+        ],
+        'MEDICATION': [
+            r'tablet', r'capsule', r'injection', r'pill', r'medication',
+            r'drug', r'antibiotic', r'dose', r'supplement', r'medicine'
+        ],
+        'SYMPTOM': [
+            r'pain', r'ache', r'discomfort', r'swelling', r'inflammation',
+            r'fever', r'nausea', r'vomiting', r'dizziness', r'fatigue'
+        ],
+        'PROCEDURE': [
+            r'surgery', r'operation', r'procedure', r'scan', r'test',
+            r'examination', r'screening', r'therapy', r'treatment'
+        ],
+        'ANATOMY': [
+            r'artery', r'vein', r'nerve', r'muscle', r'bone', r'organ',
+            r'tissue', r'cell', r'blood', r'brain', r'heart', r'lung'
+        ],
+        'VITAL_SIGN': [
+            r'pressure', r'rate', r'temperature', r'pulse', r'oxygen',
+            r'saturation', r'glucose', r'bpm', r'mmhg'
+        ],
+        'LAB_TEST': [
+            r'level', r'count', r'test', r'measurement', r'analysis',
+            r'profile', r'panel', r'screening', r'culture', r'biopsy'
+        ]
+    }
+    
+    # Try to categorize based on patterns
+    for category, pattern_list in patterns.items():
+        if any(re.search(pattern, text_lower) for pattern in pattern_list):
+            return category
+            
+    # If no specific category found, try to use the original type if it's medical
+    if original_type in patterns.keys():
+        return original_type
+        
+    # Default to MEDICAL_TERM if no specific category found
+    return 'MEDICAL_TERM'
+
 def extract_entities_with_ner(text: str) -> List[Dict[str, Any]]:
     """Extract biomedical entities using NER if available"""
     if not NER_AVAILABLE:
@@ -95,13 +179,56 @@ def extract_entities_with_ner(text: str) -> List[Dict[str, Any]]:
     try:
         results = ner_pipeline(text)
         entities = []
+        seen_entities: Set[str] = set()
+        
+        # Minimum confidence threshold
+        MIN_CONFIDENCE = 0.4
+        
+        # Words to filter out
+        filter_words = {
+            'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at',
+            'patient', 'doctor', 'hospital', 'clinic', 'day', 'days',
+            'week', 'weeks', 'month', 'months', 'year', 'years'
+        }
+        
         for ent in results:
             confidence = float(ent["score"])
+            if confidence < MIN_CONFIDENCE:
+                continue
+                
+            # Clean and normalize the entity text
+            entity_text = clean_entity_text(str(ent["word"]))
+            
+            # Skip if too short or in filter words
+            if len(entity_text) < 3 or entity_text.lower() in filter_words:
+                continue
+                
+            # Skip if it's just numbers
+            if re.match(r'^\d+$', entity_text):
+                continue
+                
+            # Skip if we've seen this entity before (case-insensitive)
+            if entity_text.lower() in seen_entities:
+                continue
+                
+            # Additional validation for medical terms
+            if not is_valid_medical_term(entity_text) and len(entity_text.split()) == 1:
+                continue
+                
+            # Categorize the entity
+            entity_type = categorize_entity(entity_text, str(ent["entity_group"]))
+            
+            # Add to results
+            seen_entities.add(entity_text.lower())
             entities.append({
-                "text": str(ent["word"]),
-                "type": str(ent["entity_group"]),
+                "text": entity_text,
+                "type": entity_type,
                 "confidence": round(confidence, 3)
             })
+        
+        # Sort by confidence score (highest first)
+        entities.sort(key=lambda x: x["confidence"], reverse=True)
+        
         return entities
     except Exception as e:
         logger.error(f"Error extracting entities: {str(e)}")
