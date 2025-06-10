@@ -7,6 +7,7 @@ from utils.section_extractor import SectionExtractor
 import logging
 import json
 from fastapi.responses import JSONResponse
+import re
 
 # Import the enhanced ICD extractor
 from utils.icd_extractor import icd_extractor
@@ -59,69 +60,71 @@ def clean_and_deduplicate(items: List[str], seen_items: Set[str]) -> List[str]:
     return cleaned
 
 def generate_section_content(text: str, section_type: str) -> List[str]:
-    """
-    Generate content for a specific section with targeted prompts.
-    
-    Args:
-        text (str): The input medical text
-        section_type (str): The type of section to generate
+    """Generate section content using T5 model with improved prompts."""
+    try:
+        # Define better prompts for each section type
+        prompts = {
+            "diagnosis": (
+                "Extract the primary diagnosis and medical conditions from this text. "
+                "Focus on current active problems and confirmed diagnoses: "
+            ),
+            "clinical_treatment": (
+                "Extract all prescribed medications, treatments, and procedures from this text. "
+                "Include dosages and frequencies if mentioned: "
+            ),
+            "medical_history": (
+                "Extract the patient's medical history from this text. "
+                "Include past conditions, surgeries, and chronic issues: "
+            )
+        }
+
+        # Prepare input text
+        input_text = prompts[section_type] + text
         
-    Returns:
-        List[str]: List of relevant bullet points
-    """
-    prompts = {
-        "diagnosis": (
-            "Extract only current confirmed medical conditions and diagnoses. "
-            "Include only active conditions mentioned in the text. "
-            "Format as bullet points. "
-            "Exclude symptoms, past conditions, and treatments. "
-            "Example format: '- Hypertension', '- Type 2 Diabetes'"
-        ),
-        "clinical_treatment": (
-            "Extract only current treatments, medications, and procedures. "
-            "Include only active prescriptions and ongoing treatments. "
-            "Format as bullet points. "
-            "Exclude past treatments and general advice. "
-            "Example format: '- Prescribed metformin 500mg twice daily', '- Scheduled physical therapy sessions'"
-        ),
-        "medical_history": (
-            "Extract only past medical conditions and family history. "
-            "Include previous illnesses, surgeries, and relevant family conditions. "
-            "Format as bullet points. "
-            "Exclude current conditions and treatments. "
-            "Example format: '- Previous heart surgery in 2019', '- Family history of diabetes'"
-        )
-    }
-    
-    # Prepare input text with section-specific prompt
-    input_text = f"{prompts[section_type]} Text: {text}"
-    
-    # Tokenize and generate
-    inputs = tokenizer(input_text, return_tensors="pt", max_length=512, truncation=True)
-    
-    with torch.no_grad():
+        # Truncate input if too long (T5 has a limit)
+        max_length = 512
+        if len(input_text) > max_length:
+            # Try to truncate at a sentence boundary
+            truncated = input_text[:max_length]
+            last_period = truncated.rfind('.')
+            if last_period > 0:
+                input_text = truncated[:last_period + 1]
+            else:
+                input_text = truncated
+
+        # Generate content
+        inputs = tokenizer(input_text, return_tensors="pt", max_length=512, truncation=True)
         outputs = model.generate(
             inputs.input_ids,
-            max_length=200,
+            max_length=150,
+            min_length=10,
             num_beams=4,
-            length_penalty=2.0,
-            early_stopping=True,
-            no_repeat_ngram_size=2  # Prevent repetition of phrases
+            no_repeat_ngram_size=3,
+            num_return_sequences=1,
+            early_stopping=True
         )
-    
-    # Decode and split into bullet points
-    summary = tokenizer.decode(outputs[0], skip_special_tokens=True)
-    
-    # Extract bullet points and clean
-    bullets = []
-    for line in summary.split('\n'):
-        line = line.strip()
-        if line.startswith('- '):
-            line = line[2:].strip()
-        if line and len(line) > 5:  # Ensure meaningful content
-            bullets.append(line)
-    
-    return bullets
+
+        # Decode and process the generated text
+        generated_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
+        
+        # Split into items and clean up
+        items = []
+        for item in generated_text.split('\n'):
+            item = item.strip()
+            if item and len(item) > 3:  # Basic validation
+                # Remove common prefixes
+                item = re.sub(r'^[-*•]\s*', '', item)
+                item = re.sub(r'^\d+\.\s*', '', item)
+                
+                # Clean up any remaining artifacts
+                item = re.sub(r'\s+', ' ', item).strip()
+                items.append(item)
+
+        return items
+
+    except Exception as e:
+        logger.error(f"Error in T5 generation for {section_type}: {str(e)}")
+        return []
 
 @router.post("/structured-analysis", response_model=MedicalAnalysisResponse)
 async def get_structured_analysis(input_data: TextInput):

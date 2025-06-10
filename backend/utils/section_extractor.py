@@ -16,7 +16,12 @@ class SectionExtractor:
         'syndrome', 'disease', 'disorder', 'condition', 'deficiency',
         'infection', 'failure', 'dysfunction', 'impairment', 'injury',
         'hypertension', 'diabetes', 'arthritis', 'asthma', 'cancer',
-        'fibrillation', 'anemia', 'insufficiency', 'stenosis'
+        'fibrillation', 'anemia', 'insufficiency', 'stenosis',
+        # Add more medical conditions
+        'pain', 'inflammation', 'fracture', 'lesion', 'mass',
+        'tumor', 'cyst', 'ulcer', 'bleeding', 'edema',
+        'abnormal', 'acute', 'chronic', 'severe', 'mild',
+        'moderate', 'recurrent', 'persistent', 'progressive'
     }
 
     # Keywords that indicate a valid treatment
@@ -24,28 +29,48 @@ class SectionExtractor:
         'mg', 'mcg', 'ml', 'units', 'prescribed', 'administered',
         'injection', 'infusion', 'tablet', 'capsule', 'surgery',
         'procedure', 'therapy', 'treatment', 'dose', 'daily',
-        'weekly', 'monthly', 'twice', 'three times'
+        'weekly', 'monthly', 'twice', 'three times',
+        # Add more treatment terms
+        'medication', 'medicine', 'drug', 'antibiotic',
+        'oral', 'topical', 'intravenous', 'iv', 'im',
+        'patch', 'cream', 'ointment', 'solution', 'inhaler',
+        'drops', 'spray', 'suppository', 'suspension'
     }
 
     # Keywords that indicate valid medical history
     VALID_HISTORY_KEYWORDS = {
         'history of', 'diagnosed with', 'since', 'chronic', 'previous',
-        'past medical', 'underwent', 'years ago', 'long-standing'
+        'past medical', 'underwent', 'years ago', 'long-standing',
+        # Add more history terms
+        'family history', 'surgical history', 'social history',
+        'prior', 'earlier', 'former', 'initially', 'originally',
+        'first diagnosed', 'onset', 'started', 'developed',
+        'childhood', 'adolescence', 'adulthood', 'known case of'
     }
 
     DIAGNOSIS_PATTERNS = [
         r"(?i)(diagnosis|impression|assessment)[\s:]+(.*?)(?=\n\s*\n|\n\s*(?:treatment|history|medications?|rx|plan|follow|instructions)|$)",
         r"(?i)(clinical\s+findings?)[\s:]+(.*?)(?=\n\s*\n|\n\s*(?:treatment|history|medications?|rx|plan|follow|instructions)|$)",
+        r"(?i)(chief\s+complaint|reason\s+for\s+visit)[\s:]+(.*?)(?=\n\s*\n|\n\s*(?:treatment|history|medications?|rx|plan|follow|instructions)|$)",
+        r"(?i)(presenting\s+symptoms?|primary\s+concern)[\s:]+(.*?)(?=\n\s*\n|\n\s*(?:treatment|history|medications?|rx|plan|follow|instructions)|$)",
     ]
     
     TREATMENT_PATTERNS = [
-        r"(?i)(medications?|rx|prescriptions?)[\s:]+(.*?)(?=\n\s*\n|\n\s*(?:history|follow|plan|instructions)|$)",
-        r"(?i)(procedures?|surgeries?)[\s:]+(.*?)(?=\n\s*\n|\n\s*(?:history|follow|plan|instructions)|$)",
+        r"(?i)(medications?|rx|prescriptions?|drugs?|treatment\s+plan)[\s:]+(.*?)(?=\n\s*\n|\n\s*(?:history|follow|plan|instructions)|$)",
+        r"(?i)(procedures?|surgeries?|interventions?)[\s:]+(.*?)(?=\n\s*\n|\n\s*(?:history|follow|plan|instructions)|$)",
+        r"(?i)(current\s+medications?|active\s+medications?|ongoing\s+treatment)[\s:]+(.*?)(?=\n\s*\n|\n\s*(?:history|follow|plan|instructions)|$)",
+        r"(?i)(prescribed\s+medications?|current\s+prescriptions?)[\s:]+(.*?)(?=\n\s*\n|\n\s*(?:history|follow|plan|instructions)|$)",
+        r"(?i)(treatment\s+regimen|therapeutic\s+plan)[\s:]+(.*?)(?=\n\s*\n|\n\s*(?:history|follow|plan|instructions)|$)"
     ]
     
     HISTORY_PATTERNS = [
-        r"(?i)(medical\s+history|past\s+history)[\s:]+(.*?)(?=\n\s*\n|$)",
-        r"(?i)(chronic\s+conditions?|previous\s+conditions?)[\s:]+(.*?)(?=\n\s*\n|$)",
+        r"(?i)(medical\s+history|past\s+history|past\s+medical\s+history)[\s:]+(.*?)(?=\n\s*\n|$)",
+        r"(?i)(chronic\s+conditions?|previous\s+conditions?|ongoing\s+conditions?)[\s:]+(.*?)(?=\n\s*\n|$)",
+        r"(?i)(past\s+(?:surgical|medical|health)\s+history)[\s:]+(.*?)(?=\n\s*\n|$)",
+        r"(?i)(significant\s+(?:medical|health)\s+history)[\s:]+(.*?)(?=\n\s*\n|$)",
+        r"(?i)(previous\s+(?:medical|health)\s+conditions?)[\s:]+(.*?)(?=\n\s*\n|$)",
+        r"(?i)(family\s+(?:medical|health)\s+history)[\s:]+(.*?)(?=\n\s*\n|$)",
+        r"(?i)(social\s+history|lifestyle\s+history)[\s:]+(.*?)(?=\n\s*\n|$)"
     ]
 
     # Expanded phrases to remove
@@ -220,7 +245,12 @@ class SectionExtractor:
             'syndrome', 'disease', 'disorder', 'condition', 'deficiency',
             'infection', 'failure', 'dysfunction', 'impairment', 'injury',
             'hypertension', 'diabetes', 'arthritis', 'asthma', 'cancer',
-            'pain', 'ache', 'inflammation', 'itis', 'emia', 'osis'
+            'pain', 'ache', 'inflammation', 'itis', 'emia', 'osis',
+            # Add more medical indicators
+            'abnormal', 'acute', 'chronic', 'severe', 'mild',
+            'moderate', 'recurrent', 'persistent', 'progressive',
+            'fracture', 'lesion', 'mass', 'tumor', 'cyst',
+            'ulcer', 'bleeding', 'edema', 'insufficiency'
         }
         
         # Accept if it contains medical terminology
@@ -230,10 +260,14 @@ class SectionExtractor:
         
         # Accept if it matches common diagnostic patterns
         diagnostic_patterns = [
-            r'\b(?:acute|chronic|recurrent|severe)\b',
+            r'\b(?:acute|chronic|recurrent|severe|mild|moderate)\b',
             r'\b(?:type|stage|grade|phase)\s*\d+\b',
             r'\b(?:bilateral|unilateral|primary|secondary)\b',
-            r'\b(?:diagnosed|confirmed|suspected|probable)\b'
+            r'\b(?:diagnosed|confirmed|suspected|probable|possible)\b',
+            r'\b(?:early|late|advanced|initial|terminal)\b',
+            r'\b(?:symptomatic|asymptomatic|active|inactive)\b',
+            r'\b(?:stable|unstable|controlled|uncontrolled)\b',
+            r'\b(?:positive|negative)\s+(?:for|test)\b'
         ]
         
         if any(re.search(pattern, text_lower) for pattern in diagnostic_patterns):
@@ -252,28 +286,28 @@ class SectionExtractor:
             logger.debug(f"Treatment rejected - too short: {text}")
             return False
         
-        # Check for medication patterns
+        # Check for medication patterns (more lenient)
         med_patterns = [
-            r'\b\d+\s*(?:mg|ml|mcg|g)\b',
-            r'\b(?:tablet|capsule|injection|dose|pill)\b',
-            r'\b(?:daily|weekly|monthly|hourly|times|prn)\b',
-            r'\b(?:oral|topical|iv|im|sc)\b'
+            r'\b\d+\s*(?:mg|ml|mcg|g|units?|tabs?|caps?)\b',  # Dosage patterns
+            r'\b(?:tablet|capsule|injection|dose|pill|patch|cream|gel|solution|syrup|inhaler)\b',  # Forms
+            r'\b(?:daily|weekly|monthly|hourly|times|prn|bid|tid|qid|qd|qw|prn)\b',  # Frequency
+            r'\b(?:oral|topical|iv|im|sc|po|pr)\b',  # Routes
+            r'\b(?:prescribed|taking|given|started|administered|recommended)\b',  # Administration
+            r'\b(?:paracetamol|ibuprofen|aspirin|acetaminophen)\b',  # Common medications
+            r'\b(?:antibiotic|antiviral|painkiller|supplement)\b',  # Medication types
+            r'\b(?:therapy|treatment|procedure|surgery|operation)\b',  # Procedures
+            r'\b(?:continue|discontinue|increase|decrease|adjust)\b',  # Instructions
+            r'\b(?:exercise|diet|lifestyle|modification)\b'  # Other treatments
         ]
         
         if any(re.search(pattern, text_lower) for pattern in med_patterns):
             logger.debug(f"Treatment accepted - medication pattern: {text}")
             return True
         
-        # Check for procedure/therapy patterns
-        procedure_patterns = [
-            r'\b(?:therapy|treatment|procedure|surgery|operation)\b',
-            r'\b(?:prescribed|administered|given|started)\b',
-            r'\b(?:continue|discontinue|increase|decrease)\b',
-            r'\b(?:exercise|diet|lifestyle|modification)\b'
-        ]
-        
-        if any(re.search(pattern, text_lower) for pattern in procedure_patterns):
-            logger.debug(f"Treatment accepted - procedure pattern: {text}")
+        # Check for common medication endings
+        med_endings = ['zole', 'olol', 'oxin', 'icin', 'mycin', 'dronate', 'sartan', 'pril', 'statin']
+        if any(text_lower.endswith(ending) for ending in med_endings):
+            logger.debug(f"Treatment accepted - medication ending: {text}")
             return True
         
         logger.debug(f"Treatment rejected - no treatment indicators: {text}")
@@ -288,12 +322,16 @@ class SectionExtractor:
             logger.debug(f"History rejected - too short: {text}")
             return False
         
-        # Check for temporal patterns
+        # Check for temporal patterns (more lenient)
         temporal_patterns = [
-            r'\b(?:history|past|previous|prior)\b',
+            r'\b(?:history|past|previous|prior|earlier|former)\b',
             r'\b(?:ago|since|for|over)\s+(?:\d+\s+)?(?:year|month|week|day)s?\b',
-            r'\b(?:chronic|ongoing|long-term|recurring)\b',
-            r'\b(?:diagnosed|treated|underwent|had)\b'
+            r'\b(?:chronic|ongoing|long-term|recurring|persistent)\b',
+            r'\b(?:diagnosed|treated|underwent|had|developed|experienced)\b',
+            r'\b(?:childhood|adolescence|adulthood)\b',
+            r'\b(?:in|during|at)\s+(?:19|20)\d{2}\b',  # Years
+            r'\b(?:started|began|onset|initially)\b',
+            r'\b(?:known|case|of)\b'
         ]
         
         if any(re.search(pattern, text_lower) for pattern in temporal_patterns):
@@ -302,12 +340,19 @@ class SectionExtractor:
         
         # Check for family history patterns
         family_patterns = [
-            r'\b(?:family|mother|father|sibling|parent)\b',
-            r'\b(?:maternal|paternal|hereditary|genetic)\b'
+            r'\b(?:family|mother|father|sibling|parent|brother|sister)\b',
+            r'\b(?:maternal|paternal|hereditary|genetic|inherited)\b',
+            r'\b(?:runs|history)\s+in\s+(?:the\s+)?family\b'
         ]
         
         if any(re.search(pattern, text_lower) for pattern in family_patterns):
             logger.debug(f"History accepted - family pattern: {text}")
+            return True
+        
+        # Check for medical condition keywords that might indicate history
+        medical_conditions = self.VALID_DIAGNOSIS_KEYWORDS
+        if any(keyword in text_lower for keyword in medical_conditions):
+            logger.debug(f"History accepted - contains medical condition: {text}")
             return True
         
         logger.debug(f"History rejected - no history indicators: {text}")
@@ -374,9 +419,8 @@ class SectionExtractor:
         return filtered_lines
 
     def extract_sections(self, text: str) -> Dict[str, List[str]]:
-        """Extract sections from medical text using patterns and term matching."""
-        logger.info("Starting section extraction")
-        logger.debug("Input text: %s", text[:200])  # Log first 200 chars
+        """Extract sections from medical text using a multi-stage approach."""
+        logger.info("Starting enhanced section extraction")
         
         # Initialize results
         sections = {
@@ -385,28 +429,101 @@ class SectionExtractor:
             "medical_history": []
         }
         
-        # First try pattern-based extraction
+        # Normalize text for better processing
+        text = self._normalize_text(text)
+        
+        # Stage 1: Pattern-based extraction
+        logger.info("Stage 1: Pattern-based extraction")
         for section_type, patterns in self.section_patterns.items():
             for pattern in patterns:
                 matches = re.finditer(pattern, text, re.MULTILINE | re.DOTALL)
                 for match in matches:
                     content = match.group(1).strip()
                     if content:
-                        logger.debug(f"Found {section_type} section with pattern: {pattern}")
-                        sections[section_type].extend(self._split_into_items(content))
-        
-        # If pattern matching didn't find much, try term-based extraction
-        if not any(sections.values()):
-            logger.info("Pattern matching found no sections, trying term-based extraction")
-            sections = self._extract_by_terms(text)
-        
-        # Clean and validate each section
+                        items = self._split_into_items(content)
+                        sections[section_type].extend(items)
+                        logger.debug(f"Found {len(items)} items in {section_type} section")
+
+        # Stage 2: Sentence-level analysis
+        logger.info("Stage 2: Sentence-level analysis")
+        sentences = re.split(r'[.!?]+\s+', text)
+        for sentence in sentences:
+            sentence = sentence.strip()
+            if not sentence:
+                continue
+                
+            # Check each sentence for section indicators
+            sentence_lower = sentence.lower()
+            
+            # Diagnosis indicators
+            if any(term in sentence_lower for term in self.section_terms["diagnosis"]):
+                sections["diagnosis"].append(sentence)
+                
+            # Treatment indicators
+            if any(term in sentence_lower for term in self.section_terms["clinical_treatment"]):
+                sections["clinical_treatment"].append(sentence)
+                
+            # History indicators
+            if any(term in sentence_lower for term in self.section_terms["medical_history"]):
+                sections["medical_history"].append(sentence)
+
+        # Stage 3: Entity-based extraction
+        logger.info("Stage 3: Entity-based extraction")
+        for sentence in sentences:
+            # Look for medication patterns
+            if re.search(r'\b\d+\s*(?:mg|ml|mcg|g)\b', sentence) or \
+               re.search(r'\b(?:tablet|capsule|injection|pill)\b', sentence.lower()):
+                sections["clinical_treatment"].append(sentence)
+            
+            # Look for temporal patterns indicating history
+            if re.search(r'\b(?:ago|since|for|over)\s+(?:\d+\s+)?(?:year|month|week|day)s?\b', sentence.lower()) or \
+               re.search(r'\b(?:in|during)\s+(?:19|20)\d{2}\b', sentence.lower()):
+                sections["medical_history"].append(sentence)
+            
+            # Look for diagnostic patterns
+            if re.search(r'\b(?:diagnosed|confirmed|suspected|shows|indicates|reveals)\b', sentence.lower()):
+                sections["diagnosis"].append(sentence)
+
+        # Stage 4: Clean and validate each section
+        logger.info("Stage 4: Cleaning and validation")
         for section_type in sections:
-            original_count = len(sections[section_type])
-            sections[section_type] = self._clean_and_validate(sections[section_type], section_type)
-            logger.info(f"{section_type}: {original_count} items found, {len(sections[section_type])} valid")
-            logger.debug(f"{section_type} items: {sections[section_type]}")
-        
+            # Remove duplicates while preserving order
+            seen = set()
+            cleaned_items = []
+            for item in sections[section_type]:
+                item = self._clean_text(item)
+                item_lower = item.lower()
+                
+                if item and item_lower not in seen:
+                    # Validate based on section type
+                    if section_type == "diagnosis" and self._is_valid_diagnosis(item):
+                        cleaned_items.append(item)
+                        seen.add(item_lower)
+                    elif section_type == "clinical_treatment" and self._is_valid_treatment(item):
+                        cleaned_items.append(item)
+                        seen.add(item_lower)
+                    elif section_type == "medical_history" and self._is_valid_history(item):
+                        cleaned_items.append(item)
+                        seen.add(item_lower)
+            
+            sections[section_type] = cleaned_items
+            logger.info(f"{section_type}: Found {len(cleaned_items)} valid items")
+
+        # Stage 5: Cross-reference and reorganize
+        logger.info("Stage 5: Cross-reference and reorganize")
+        # Move misplaced items to correct sections
+        for section_type, items in list(sections.items()):
+            for item in items[:]:
+                if section_type != "diagnosis" and self._is_valid_diagnosis(item):
+                    sections["diagnosis"].append(item)
+                    sections[section_type].remove(item)
+                elif section_type != "clinical_treatment" and self._is_valid_treatment(item):
+                    sections["clinical_treatment"].append(item)
+                    sections[section_type].remove(item)
+                elif section_type != "medical_history" and self._is_valid_history(item):
+                    sections["medical_history"].append(item)
+                    sections[section_type].remove(item)
+
         return sections
 
     def _normalize_text(self, text: str) -> str:
@@ -427,8 +544,7 @@ class SectionExtractor:
         return text
 
     def _split_into_items(self, text: str) -> List[str]:
-        """Split text into individual items."""
-        # Split on common delimiters
+        """Split text into individual items with improved handling."""
         items = []
         
         # First try splitting on bullet points and numbers
@@ -441,109 +557,22 @@ class SectionExtractor:
             # Split on sentence endings and semicolons
             splits = re.split(r'[.;]\s+(?=[A-Z]|$)', text)
             items.extend(split.strip() for split in splits if split.strip())
-        
-        return items
-
-    def _extract_by_terms(self, text: str) -> Dict[str, List[str]]:
-        """Extract sections by looking for characteristic terms."""
-        sections = {
-            "diagnosis": [],
-            "clinical_treatment": [],
-            "medical_history": []
-        }
-        
-        # First try to split into sentences
-        sentences = re.split(r'[.!?]\s+', text)
-        
-        # Process each sentence
-        for sentence in sentences:
-            sentence = sentence.strip()
-            if not sentence:
-                continue
             
-            # Check each section's terms
-            matched = False
-            for section_type, terms in self.section_terms.items():
-                # Check if any term appears in the sentence
-                if any(term.lower() in sentence.lower() for term in terms):
-                    # Clean up the sentence
-                    cleaned = sentence
-                    for phrase in self.filler_phrases:
-                        cleaned = re.sub(phrase, '', cleaned)
-                    cleaned = cleaned.strip()
-                    
-                    # Add to appropriate section if it's valid
-                    if section_type == "diagnosis" and self._is_valid_diagnosis(cleaned):
-                        sections["diagnosis"].append(cleaned)
-                        matched = True
-                        break
-                    elif section_type == "clinical_treatment" and self._is_valid_treatment(cleaned):
-                        sections["clinical_treatment"].append(cleaned)
-                        matched = True
-                        break
-                    elif section_type == "medical_history" and self._is_valid_history(cleaned):
-                        sections["medical_history"].append(cleaned)
-                        matched = True
-                        break
-            
-            # If sentence wasn't matched but contains medical terms, try to classify it
-            if not matched:
-                # Look for medication patterns
-                if re.search(r'\b\d+\s*(?:mg|ml|mcg|g)\b', sentence, re.IGNORECASE):
-                    cleaned = sentence
-                    for phrase in self.filler_phrases:
-                        cleaned = re.sub(phrase, '', cleaned)
-                    cleaned = cleaned.strip()
-                    if cleaned:
-                        sections["clinical_treatment"].append(cleaned)
-                
-                # Look for temporal patterns suggesting history
-                elif re.search(r'\b(?:since|for|ago|past|history|previous)\b', sentence, re.IGNORECASE):
-                    cleaned = sentence
-                    for phrase in self.filler_phrases:
-                        cleaned = re.sub(phrase, '', cleaned)
-                    cleaned = cleaned.strip()
-                    if cleaned:
-                        sections["medical_history"].append(cleaned)
-                
-                # Look for diagnostic patterns
-                elif re.search(r'\b(?:diagnosed|presents|shows|exhibits|symptoms?|signs?)\b', sentence, re.IGNORECASE):
-                    cleaned = sentence
-                    for phrase in self.filler_phrases:
-                        cleaned = re.sub(phrase, '', cleaned)
-                    cleaned = cleaned.strip()
-                    if cleaned:
-                        sections["diagnosis"].append(cleaned)
+            # If we still don't have items, try splitting on commas for lists
+            if len(items) <= 1 and ',' in text:
+                items = [item.strip() for item in text.split(',') if item.strip()]
         
-        return sections
-
-    def _clean_and_validate(self, items: List[str], section_type: str) -> List[str]:
-        """Clean and validate items for a specific section."""
-        cleaned = []
-        seen = set()
-        
+        # Additional cleaning
+        cleaned_items = []
         for item in items:
-            # Remove filler phrases
-            for phrase in self.filler_phrases:
-                item = re.sub(phrase, '', item)
+            # Remove common prefixes
+            item = re.sub(r'^[-•*]\s*', '', item)
+            item = re.sub(r'^\d+[.)] ', '', item)
             
-            # Clean up the item
-            item = item.strip()
+            # Remove redundant whitespace
             item = re.sub(r'\s+', ' ', item)
             
-            # Skip if too short or duplicate
-            if len(item) < 5 or item.lower() in seen:
-                continue
-            
-            # Validate based on section type
-            if section_type == "diagnosis" and self._is_valid_diagnosis(item):
-                cleaned.append(item)
-                seen.add(item.lower())
-            elif section_type == "clinical_treatment" and self._is_valid_treatment(item):
-                cleaned.append(item)
-                seen.add(item.lower())
-            elif section_type == "medical_history" and self._is_valid_history(item):
-                cleaned.append(item)
-                seen.add(item.lower())
+            if item.strip():
+                cleaned_items.append(item.strip())
         
-        return cleaned 
+        return cleaned_items 

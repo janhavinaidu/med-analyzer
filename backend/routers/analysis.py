@@ -1,7 +1,7 @@
 # routers/analysis.py
 from fastapi import APIRouter, HTTPException, File, UploadFile
 from pydantic import BaseModel, Field
-from typing import Dict, Any, List, Optional, Set
+from typing import Dict, Any, List, Optional, Set, Tuple
 import json
 import logging
 from fastapi.responses import JSONResponse
@@ -93,31 +93,97 @@ def extract_text_from_pdf(file_content: bytes) -> str:
 
 def clean_entity_text(text: str) -> str:
     """Clean and normalize entity text."""
-    # Remove unwanted characters and normalize whitespace
-    text = re.sub(r'[,.;:!?"\']', '', text)
-    text = re.sub(r'\s+', ' ', text)
-    return text.strip()
+    # Remove ## artifacts
+    text = re.sub(r'##(\w+)', r'\1', text)
+    
+    # Fix hyphenation
+    text = re.sub(r'(\w+)\s*-\s*(\w+)', r'\1 \2', text)
+    
+    # Normalize spaces
+    text = re.sub(r'\s+', ' ', text).strip()
+    
+    # Remove leading articles
+    text = re.sub(r'^(?:the|a|an)\s+', '', text, flags=re.IGNORECASE)
+    
+    return text
 
 def is_valid_medical_term(text: str) -> bool:
     """Check if the text appears to be a valid medical term."""
     # Common medical word endings
     medical_suffixes = {
+        # Conditions and diseases
         'itis', 'emia', 'osis', 'pathy', 'algia', 'ectomy', 'plasty',
-        'otomy', 'ology', 'gram', 'graph', 'scopy', 'tomy', 'opsy'
+        'otomy', 'ology', 'gram', 'graph', 'scopy', 'tomy', 'opsy',
+        'oma', 'ase', 'ism', 'sia', 'trophy', 'plasia', 'rrhagia',
+        'rrhea', 'phobia', 'esthesia', 'plegia', 'paresis', 'spasm',
+        
+        # Lab tests and measurements
+        'crit', 'stat', 'assay', 'level', 'count', 'ratio', 'index',
+        
+        # Treatments and procedures
+        'therapy', 'tomy', 'ectomy', 'ostomy', 'plasty', 'pexy',
+        'centesis', 'scopy', 'gram', 'graphy'
     }
     
     # Common medical prefixes
     medical_prefixes = {
+        # Anatomical
+        'cardio', 'neuro', 'gastro', 'hepato', 'nephro', 'dermato',
+        'osteo', 'arthro', 'myelo', 'cerebro', 'broncho', 'pneumo',
+        
+        # Descriptive
         'hyper', 'hypo', 'anti', 'poly', 'hemi', 'neo', 'post',
-        'pre', 'peri', 'endo', 'exo', 'meta', 'para', 'dys'
+        'pre', 'peri', 'endo', 'exo', 'meta', 'para', 'dys',
+        'brady', 'tachy', 'mal', 'macro', 'micro', 'iso', 'hetero',
+        
+        # Common medical
+        'hemo', 'immuno', 'onco', 'cyto', 'bio', 'patho'
+    }
+    
+    # Common medical terms (for exact matches or contains)
+    medical_terms = {
+        # Common conditions
+        'diabetes', 'hypertension', 'asthma', 'arthritis', 'cancer',
+        'infection', 'disease', 'syndrome', 'disorder', 'deficiency',
+        
+        # Vital signs and measurements
+        'pressure', 'rate', 'pulse', 'temperature', 'saturation',
+        'glucose', 'cholesterol', 'count', 'level', 'index',
+        
+        # Anatomy
+        'blood', 'heart', 'liver', 'kidney', 'lung', 'brain',
+        'muscle', 'bone', 'joint', 'artery', 'vein', 'nerve',
+        
+        # Common symptoms
+        'pain', 'swelling', 'inflammation', 'fever', 'fatigue',
+        'nausea', 'vomiting', 'dizziness', 'weakness', 'numbness'
     }
     
     text_lower = text.lower()
+    
+    # Check for exact matches in medical terms
+    if text_lower in medical_terms:
+        return True
+    
+    # Check for medical terms contained in the text
+    if any(term in text_lower for term in medical_terms):
+        return True
     
     # Check for medical suffixes and prefixes
     if any(text_lower.endswith(suffix) for suffix in medical_suffixes):
         return True
     if any(text_lower.startswith(prefix) for prefix in medical_prefixes):
+        return True
+        
+    # Check for specific patterns
+    patterns = [
+        r'\b[A-Z][a-z]+(?:[-\s][A-Z][a-z]+)*\s+(?:disease|syndrome|disorder|deficiency)',  # Named conditions
+        r'\b(?:Type|Grade|Stage|Phase|Class)\s+[1-4I-IV]+\b',  # Classifications
+        r'\b[A-Z]{2,}\d*\b',  # Medical abbreviations (e.g., HIV, COPD)
+        r'\b\d+(?:\.\d+)?\s*(?:mg|g|mcg|ml|mmol|units)/?\w*\b'  # Measurements
+    ]
+    
+    if any(re.search(pattern, text) for pattern in patterns):
         return True
         
     return False
@@ -126,113 +192,364 @@ def categorize_entity(text: str, original_type: str) -> str:
     """Categorize the entity into a more specific medical category."""
     text_lower = text.lower()
     
-    # Define category patterns
+    # Define category patterns with more specific subcategories
     patterns = {
-        'DISEASE': [
-            r'disease', r'syndrome', r'disorder', r'infection', r'itis',
-            r'emia', r'osis', r'pathy', r'cancer', r'tumor', r'carcinoma',
-            r'failure', r'deficiency'
-        ],
-        'MEDICATION': [
-            r'tablet', r'capsule', r'injection', r'pill', r'medication',
-            r'drug', r'antibiotic', r'dose', r'supplement', r'medicine'
-        ],
-        'SYMPTOM': [
-            r'pain', r'ache', r'discomfort', r'swelling', r'inflammation',
-            r'fever', r'nausea', r'vomiting', r'dizziness', r'fatigue'
-        ],
-        'PROCEDURE': [
-            r'surgery', r'operation', r'procedure', r'scan', r'test',
-            r'examination', r'screening', r'therapy', r'treatment'
-        ],
-        'ANATOMY': [
-            r'artery', r'vein', r'nerve', r'muscle', r'bone', r'organ',
-            r'tissue', r'cell', r'blood', r'brain', r'heart', r'lung'
-        ],
-        'VITAL_SIGN': [
-            r'pressure', r'rate', r'temperature', r'pulse', r'oxygen',
-            r'saturation', r'glucose', r'bpm', r'mmhg'
-        ],
-        'LAB_TEST': [
-            r'level', r'count', r'test', r'measurement', r'analysis',
-            r'profile', r'panel', r'screening', r'culture', r'biopsy'
-        ]
+        'DISEASE': {
+            'patterns': [
+                r'disease', r'syndrome', r'disorder', r'infection', r'itis',
+                r'emia', r'osis', r'pathy', r'failure', r'deficiency'
+            ],
+            'subcategories': {
+                'CANCER': [r'cancer', r'tumor', r'carcinoma', r'sarcoma', r'lymphoma', r'leukemia'],
+                'CHRONIC_DISEASE': [r'diabetes', r'hypertension', r'arthritis', r'asthma', r'copd'],
+                'INFECTION': [r'infection', r'itis$', r'viral', r'bacterial', r'fungal'],
+                'AUTOIMMUNE': [r'lupus', r'arthritis', r'sclerosis', r'psoriasis']
+            }
+        },
+        'MEDICATION': {
+            'patterns': [
+                r'tablet', r'capsule', r'injection', r'pill', r'medication',
+                r'drug', r'antibiotic', r'dose', r'supplement', r'medicine'
+            ],
+            'subcategories': {
+                'ANTIBIOTIC': [r'cillin$', r'mycin$', r'antibiotic'],
+                'ANALGESIC': [r'pain', r'relief', r'aspirin', r'ibuprofen', r'acetaminophen'],
+                'CARDIOVASCULAR': [r'olol$', r'pril$', r'sartan$', r'statin$'],
+                'PSYCHIATRIC': [r'antidepress', r'anxiety', r'psychiatric']
+            }
+        },
+        'LAB_TEST': {
+            'patterns': [
+                r'test', r'level', r'count', r'measurement', r'analysis',
+                r'profile', r'panel', r'screening', r'culture', r'biopsy'
+            ],
+            'subcategories': {
+                'BLOOD_TEST': [r'blood', r'cbc', r'hemoglobin', r'wbc', r'rbc'],
+                'IMAGING': [r'xray', r'mri', r'ct', r'ultrasound', r'scan'],
+                'PATHOLOGY': [r'biopsy', r'culture', r'cytology', r'histology'],
+                'DIAGNOSTIC': [r'diagnostic', r'screening', r'assessment']
+            }
+        },
+        'VITAL_SIGN': {
+            'patterns': [
+                r'pressure', r'rate', r'temperature', r'pulse', r'oxygen',
+                r'saturation', r'glucose', r'bpm', r'mmhg'
+            ],
+            'subcategories': {
+                'BLOOD_PRESSURE': [r'pressure', r'systolic', r'diastolic', r'mmhg'],
+                'HEART_RATE': [r'pulse', r'rate', r'bpm', r'rhythm'],
+                'TEMPERATURE': [r'temp', r'fever', r'celsius', r'fahrenheit'],
+                'RESPIRATORY': [r'breathing', r'respiratory', r'oxygen', r'saturation']
+            }
+        },
+        'SYMPTOM': {
+            'patterns': [
+                r'pain', r'ache', r'discomfort', r'swelling', r'inflammation',
+                r'fever', r'nausea', r'vomiting', r'dizziness', r'fatigue'
+            ],
+            'subcategories': {
+                'PAIN': [r'pain', r'ache', r'discomfort', r'soreness'],
+                'NEUROLOGICAL': [r'dizz', r'headache', r'numbness', r'tingling'],
+                'GASTROINTESTINAL': [r'nausea', r'vomit', r'diarrhea', r'constipation'],
+                'RESPIRATORY': [r'cough', r'breath', r'wheez', r'dyspnea']
+            }
+        }
     }
     
-    # Try to categorize based on patterns
-    for category, pattern_list in patterns.items():
-        if any(re.search(pattern, text_lower) for pattern in pattern_list):
-            return category
-            
-    # If no specific category found, try to use the original type if it's medical
-    if original_type in patterns.keys():
-        return original_type
-        
-    # Default to MEDICAL_TERM if no specific category found
-    return 'MEDICAL_TERM'
+    # First try to find a main category
+    main_category = 'MEDICAL_TERM'
+    subcategory = None
+    
+    for category, data in patterns.items():
+        # Check main category patterns
+        if any(re.search(pattern, text_lower) for pattern in data['patterns']):
+            main_category = category
+            # Check subcategories
+            for sub, sub_patterns in data['subcategories'].items():
+                if any(re.search(pattern, text_lower) for pattern in sub_patterns):
+                    subcategory = sub
+                    break
+            break
+    
+    # Return the most specific category available
+    return subcategory if subcategory else main_category
 
 def extract_entities_with_ner(text: str) -> List[Dict[str, Any]]:
-    """Extract biomedical entities using NER if available"""
+    """Extract biomedical entities using NER with enhanced clinical categorization"""
     if not NER_AVAILABLE:
         return []
     
     try:
-        results = ner_pipeline(text)
+        # Pre-process text
+        text = clean_text_for_processing(text)
+        logger.info(f"Cleaned text: {text}")
+        
+        # Get base entities
+        base_results = ner_pipeline(text)
+        logger.info(f"Base NER results: {base_results}")
+        
+        # Initialize lists for different entity types
         entities = []
         seen_entities: Set[str] = set()
         
-        # Minimum confidence threshold
-        MIN_CONFIDENCE = 0.4
-        
-        # Words to filter out
-        filter_words = {
-            'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at',
-            'patient', 'doctor', 'hospital', 'clinic', 'day', 'days',
-            'week', 'weeks', 'month', 'months', 'year', 'years'
+        # Define medical patterns
+        medical_patterns = {
+            'DISEASE': [
+                r'(?:chronic|acute)\s+\w+(?:\s+disease)?',
+                r'type\s+[12]\s+diabetes(?:\s+mellitus)?',
+                r'\w+(?:itis|osis|emia|opathy)\b',
+                r'(?:heart|kidney|liver|lung)\s+(?:disease|failure)',
+                r'(?:hypertension|diabetes|asthma|copd|cancer)\b'
+            ],
+            'MEDICATION': [
+                r'\w+(?:cin|zole|olol|ide|ate|ine|one|il|in)\b',
+                r'(?:insulin|aspirin|warfarin|heparin)\b',
+                r'\d+\s*(?:mg|mcg|g)\s+\w+',
+                r'(?:tablet|capsule|injection)\s+of\s+\w+'
+            ],
+            'SYMPTOM': [
+                r'(?:fever|cough|pain|fatigue|nausea|vomiting)',
+                r'shortness\s+of\s+breath',
+                r'(?:chest|abdominal)\s+pain',
+                r'(?:headache|dizziness|weakness)'
+            ],
+            'TEST_PROCEDURE': [
+                r'(?:blood|urine)\s+test',
+                r'(?:mri|ct|pet)\s+scan',
+                r'(?:x-ray|xray|ultrasound)',
+                r'(?:ecg|ekg|echocardiogram)'
+            ],
+            'BODY_PART': [
+                r'(?:heart|lung|liver|kidney|brain)',
+                r'(?:chest|abdomen|head|neck)',
+                r'(?:left|right)\s+\w+',
+                r'(?:upper|lower)\s+\w+'
+            ],
+            'DOSAGE': [
+                r'\d+(?:\.\d+)?\s*(?:mg|g|ml|mcg|units?)',
+                r'(?:once|twice|thrice)\s+(?:daily|a\s+day)',
+                r'\d+\s+times?\s+(?:per|a)\s+day'
+            ],
+            'TEMPORAL': [
+                r'\d+\s+(?:day|week|month|year)s?\s+(?:ago|before|after)',
+                r'(?:every|each)\s+(?:day|morning|evening)',
+                r'(?:daily|weekly|monthly)'
+            ]
         }
         
-        for ent in results:
-            confidence = float(ent["score"])
-            if confidence < MIN_CONFIDENCE:
-                continue
-                
-            # Clean and normalize the entity text
+        # First pass: Extract entities from NER
+        for ent in base_results:
             entity_text = clean_entity_text(str(ent["word"]))
+            if not is_valid_entity(entity_text):
+                continue
             
-            # Skip if too short or in filter words
-            if len(entity_text) < 3 or entity_text.lower() in filter_words:
-                continue
-                
-            # Skip if it's just numbers
-            if re.match(r'^\d+$', entity_text):
-                continue
-                
-            # Skip if we've seen this entity before (case-insensitive)
-            if entity_text.lower() in seen_entities:
-                continue
-                
-            # Additional validation for medical terms
-            if not is_valid_medical_term(entity_text) and len(entity_text.split()) == 1:
-                continue
-                
-            # Categorize the entity
-            entity_type = categorize_entity(entity_text, str(ent["entity_group"]))
+            # Get context
+            context_start = max(0, text.lower().find(entity_text.lower()) - 50)
+            context_end = min(len(text), text.lower().find(entity_text.lower()) + len(entity_text) + 50)
+            context = text[context_start:context_end].lower()
             
-            # Add to results
-            seen_entities.add(entity_text.lower())
-            entities.append({
-                "text": entity_text,
-                "type": entity_type,
-                "confidence": round(confidence, 3)
-            })
+            # Try to classify the entity
+            entity_type = 'UNKNOWN'
+            confidence = float(ent["score"])
+            
+            # Check against patterns
+            for category, patterns in medical_patterns.items():
+                if any(re.search(pattern, entity_text.lower()) for pattern in patterns):
+                    entity_type = category
+                    confidence += 0.3
+                    break
+            
+            if entity_type != 'UNKNOWN' and confidence >= 0.4:
+                entity_key = f"{entity_text.lower()}_{entity_type}"
+                if entity_key not in seen_entities:
+                    entities.append({
+                        "text": entity_text,
+                        "type": entity_type,
+                        "confidence": round(confidence, 3)
+                    })
+                    seen_entities.add(entity_key)
         
-        # Sort by confidence score (highest first)
-        entities.sort(key=lambda x: x["confidence"], reverse=True)
+        # Second pass: Pattern-based extraction
+        for match in re.finditer(r'\b\w+(?:\s+\w+){0,4}\b', text):
+            phrase = match.group(0)
+            if not is_valid_entity(phrase):
+                continue
+            
+            for category, patterns in medical_patterns.items():
+                if any(re.search(pattern, phrase.lower()) for pattern in patterns):
+                    entity_key = f"{phrase.lower()}_{category}"
+                    if entity_key not in seen_entities:
+                        entities.append({
+                            "text": phrase,
+                            "type": category,
+                            "confidence": 0.7
+                        })
+                        seen_entities.add(entity_key)
+                        break
         
-        return entities
+        # Post-process entities
+        processed = []
+        seen = set()
+        
+        for entity in sorted(entities, key=lambda x: (-x['confidence'], -len(x['text']))):
+            text = entity['text'].lower()
+            if not any(text in seen_text for seen_text in seen if text != seen_text):
+                processed.append(entity)
+                seen.add(text)
+        
+        logger.info(f"Extracted entities: {processed}")
+        return processed
+        
     except Exception as e:
-        logger.error(f"Error extracting entities: {str(e)}")
+        logger.error(f"Error in entity extraction: {str(e)}")
         return []
+
+def classify_clinical_entity(text: str, context: str, base_confidence: float, categories: Dict) -> Tuple[str, float]:
+    """Classify entity into clinical categories with confidence score."""
+    entity_type = 'UNKNOWN'
+    max_confidence = base_confidence
+    
+    text_lower = text.lower()
+    context_lower = context.lower()
+    
+    for category, rules in categories.items():
+        confidence = base_confidence
+        
+        # Check patterns
+        if any(re.search(pattern, text_lower) for pattern in rules['patterns']):
+            confidence += 0.3
+            
+        # Check keywords
+        if any(keyword in text_lower for keyword in rules['keywords']):
+            confidence += 0.2
+            
+        # Check context keywords
+        if any(keyword in context_lower for keyword in rules['keywords']):
+            confidence += 0.1
+            
+        # Special rules for each category
+        if category == 'DISEASE':
+            if rules.get('min_word_length') and len(text) >= rules['min_word_length']:
+                confidence += 0.1
+                
+        elif category == 'MEDICATION':
+            if not any(word in text_lower for word in rules.get('exclude_words', set())):
+                confidence += 0.1
+                
+        elif category == 'BODY_PART':
+            if rules.get('require_context') and not any(keyword in context_lower for keyword in rules['keywords']):
+                confidence -= 0.2
+                
+        elif category == 'DOSAGE':
+            if rules.get('require_number') and not re.search(r'\d+', text):
+                confidence -= 0.3
+                
+        if confidence > max_confidence:
+            max_confidence = confidence
+            entity_type = category
+            
+    return entity_type, max_confidence
+
+def validate_clinical_entity(text: str, entity_type: str, categories: Dict) -> bool:
+    """Validate clinical entity based on its type."""
+    if entity_type not in categories:
+        return False
+        
+    category = categories[entity_type]
+    text_lower = text.lower()
+    
+    # General validation
+    if len(text.split()) == 1 and len(text) < 3:
+        return False
+        
+    # Category-specific validation
+    if entity_type == 'DISEASE':
+        if len(text) < category.get('min_word_length', 0):
+            return False
+            
+    elif entity_type == 'MEDICATION':
+        if text_lower in category.get('exclude_words', set()):
+            return False
+            
+    elif entity_type == 'DOSAGE':
+        if category.get('require_number') and not re.search(r'\d+', text):
+            return False
+            
+    elif entity_type == 'TEMPORAL':
+        if not any(re.search(pattern, text_lower) for pattern in category['patterns']):
+            return False
+            
+    return True
+
+def post_process_clinical_entities(entities: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Post-process clinical entities for improved accuracy."""
+    processed = []
+    seen = set()
+    
+    # Sort by confidence and length
+    sorted_entities = sorted(
+        entities,
+        key=lambda x: (-x['confidence'], -len(x['text']))
+    )
+    
+    for entity in sorted_entities:
+        text = entity['text'].lower()
+        
+        # Skip if this is a substring of an already seen entity
+        if any(text in seen_text for seen_text in seen if text != seen_text):
+            continue
+            
+        # Skip single words that are too generic
+        if len(text.split()) == 1 and text in {
+            'test', 'scan', 'pain', 'dose', 'daily',
+            'normal', 'high', 'low', 'mild', 'severe'
+        }:
+            continue
+            
+        processed.append(entity)
+        seen.add(text)
+    
+    return processed
+
+def is_valid_entity(text: str) -> bool:
+    """Validate if an entity should be included in results."""
+    # Skip if too short or too long
+    if len(text) < 2 or len(text) > 100:
+        return False
+    
+    # Skip common irrelevant terms
+    irrelevant_terms = {
+        'the', 'and', 'was', 'were', 'had', 'has', 'have', 'been',
+        'patient', 'doctor', 'normal', 'mild', 'moderate', 'severe',
+        'none', 'room', 'ward', 'clinic', 'hospital', 'occasional',
+        'activity', 'referred', 'elevated', 'slightly', 'raised',
+        'high', 'low', 'regular', 'routine', 'bed', 'note', 'report'
+    }
+    
+    if text.lower() in irrelevant_terms:
+        return False
+    
+    # Must contain at least one letter
+    if not re.search(r'[a-zA-Z]', text):
+        return False
+    
+    return True
+
+def clean_text_for_processing(text: str) -> str:
+    """Clean and normalize text for processing."""
+    # Remove ## artifacts
+    text = re.sub(r'##(\w+)', r'\1', text)
+    
+    # Fix hyphenation
+    text = re.sub(r'(\w+)\s*-\s*(\w+)', r'\1\2', text)
+    
+    # Normalize spaces around measurements
+    text = re.sub(r'(\d+)\s*(mg|mcg|g|ml|units)', r'\1 \2', text)
+    
+    # Fix age descriptions
+    text = re.sub(r'(\d+)\s*(?:year|yr)s?\s*(?:-|\s+)?\s*old', r'\1 years old', text)
+    
+    return text
 
 def extract_medications_from_text(text: str) -> List[str]:
     """Extract medication names from text using pattern matching"""
