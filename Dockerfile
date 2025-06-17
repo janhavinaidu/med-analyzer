@@ -23,6 +23,13 @@ RUN npm run build
 FROM python:3.11-slim as backend
 WORKDIR /app
 
+# --- Add system dependencies for nmslib ---
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    cmake \
+    g++ \
+ && rm -rf /var/lib/apt/lists/*
+
 # Copy backend source
 COPY backend/ ./backend
 COPY backend/requirements.txt .
@@ -31,6 +38,7 @@ COPY backend/requirements.txt .
 COPY --from=frontend-build /app/frontend/dist ./frontend-dist
 
 # Install Python dependencies
+RUN pip install --upgrade pip
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Expose backend port
