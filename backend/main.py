@@ -1,14 +1,12 @@
-# main.py
 from fastapi import FastAPI, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from fastapi.requests import Request
+from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 import logging
-
-# Import routers
-from routers import pdf, text, analysis, summary, chat, report, blood_analysis, icd
+import os
 
 # Load environment variables (e.g., AI_API_KEY from .env)
 load_dotenv()
@@ -23,21 +21,26 @@ app = FastAPI(
     version="2.0.0"
 )
 
-# Configure CORS to allow frontend access
+# Allow frontend to access backend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:3000",  # React default
-        "http://localhost:8080",  # Your frontend
-        "http://127.0.0.1:3000",
-        "http://127.0.0.1:8080"
+        "*",  # Use "*" for Render deployment (or restrict to your Render domain)
     ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Include routers with proper prefixes
+# Mount React frontend (serves files from /frontend-dist)
+frontend_path = os.path.join(os.path.dirname(__file__), "../frontend-dist")
+if os.path.exists(frontend_path):
+    app.mount("/", StaticFiles(directory=frontend_path, html=True), name="frontend")
+
+# Import routers
+from routers import pdf, text, analysis, summary, chat, report, blood_analysis, icd
+
+# Include routers
 app.include_router(pdf.router, prefix="/api/pdf", tags=["PDF Processing"])
 app.include_router(text.router, prefix="/api/text", tags=["Text Processing"])
 app.include_router(analysis.router, prefix="/api/analysis", tags=["Medical Analysis"])
@@ -47,7 +50,7 @@ app.include_router(chat.router, prefix="/api/chat", tags=["Chatbot"])
 app.include_router(report.router, prefix="/api/report", tags=["Report Generation"])
 app.include_router(blood_analysis.router, prefix="/api/blood", tags=["Blood Analysis"])
 
-# Custom error handler for validation errors
+# Custom validation error handler
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     return JSONResponse(
@@ -55,7 +58,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         content={"success": False, "detail": exc.errors()}
     )
 
-# Health check endpoint
+# Health check
 @app.get("/health")
 async def health_check():
     return {
@@ -64,8 +67,8 @@ async def health_check():
         "version": "2.0.0"
     }
 
-# Root endpoint
-@app.get("/")
+# API info (not needed for frontend – only useful via `/docs`)
+@app.get("/api")
 async def root():
     return {
         "message": "Welcome to Medical Analysis API",
@@ -73,10 +76,9 @@ async def root():
         "health": "/health"
     }
 
-# Test endpoint for ICD functionality
-@app.get("/test-icd")
+# ICD code test endpoint
+@app.get("/api/test-icd")
 async def test_icd_functionality():
-    """Test endpoint to verify ICD extraction is working"""
     try:
         from utils.icd_extractor import icd_extractor
         
@@ -94,20 +96,27 @@ async def test_icd_functionality():
                 "input": test_text,
                 "codes": codes
             }
-        
+
         return {
             "success": True,
             "icd_codes_loaded": len(icd_extractor.icd_codes),
             "condition_mappings": len(icd_extractor.condition_mappings),
             "test_results": results
         }
+
     except Exception as e:
         return {
             "success": False,
             "error": str(e)
         }
 
-# Run with: uvicorn main:app --reload
+# This ensures index.html is returned for unmatched frontend routes (React SPA)
+@app.get("/{full_path:path}")
+async def serve_react_app():
+    index_path = os.path.join(frontend_path, "index.html")
+    return FileResponse(index_path)
+
+# For local testing only
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=8000)
