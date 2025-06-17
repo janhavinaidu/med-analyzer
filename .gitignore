@@ -1,23 +1,39 @@
 # Python
 __pycache__/
-*.pyc
+*.py[cod]
 *.pyo
 *.pyd
-.env
-venv/
+*.log
+*.db
 *.sqlite3
+.env
+.env.*
 
-# FastAPI build cache
+# Python virtual environments
+.venv/
+venv/
+
+# FastAPI/Backend
 *.log
 *.db
 
-# React
+# React/Frontend
 node_modules/
 dist/
-.env.local
-.env.development
-.env.production
+build/
+*.env.local
+*.env.development
+*.env.production
+*.env.test
+.env
 
-# Mac & system
+# System/Misc
 .DS_Store
 *.swp
+*.bak
+*.tmp
+
+# Docker
+*.dockerignore
+Dockerfile
+ 

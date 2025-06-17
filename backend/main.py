@@ -38,7 +38,7 @@ if os.path.exists(frontend_path):
     app.mount("/", StaticFiles(directory=frontend_path, html=True), name="frontend")
 
 # Import routers
-from routers import pdf, text, analysis, summary, chat, report, blood_analysis, icd
+from backend.routers import pdf, text, analysis, summary, chat, report, blood_analysis, icd
 
 # Include routers
 app.include_router(pdf.router, prefix="/api/pdf", tags=["PDF Processing"])
@@ -80,7 +80,7 @@ async def root():
 @app.get("/api/test-icd")
 async def test_icd_functionality():
     try:
-        from utils.icd_extractor import icd_extractor
+        from backend.utils.icd_extractor import icd_extractor
         
         test_cases = [
             "Patient diagnosed with type 2 diabetes and hypertension",

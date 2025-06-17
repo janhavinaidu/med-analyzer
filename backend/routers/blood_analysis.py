@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 import logging
 
-from utils.pdf_processor import process_blood_report, ProcessingError
+from backend.utils.pdf_processor import process_blood_report, ProcessingError
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

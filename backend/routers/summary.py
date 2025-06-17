@@ -3,15 +3,15 @@ from pydantic import BaseModel, Field
 from typing import Dict, Any, List, Set, Optional
 from transformers import T5ForConditionalGeneration, T5Tokenizer
 import torch
-from utils.section_extractor import SectionExtractor
+from backend.utils.section_extractor import SectionExtractor
 import logging
 import json
 from fastapi.responses import JSONResponse
 import re
 
 # Import the enhanced ICD extractor
-from utils.icd_extractor import icd_extractor
-from routers.analysis import extract_entities_with_ner  # Import the entity extraction function
+from backend.utils.icd_extractor import icd_extractor
+from backend.routers.analysis import extract_entities_with_ner  # Import the entity extraction function
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

@@ -12,7 +12,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Import the enhanced ICD extractor
-from utils.icd_extractor import icd_extractor
+from backend.utils.icd_extractor import icd_extractor
 
 # For NER (if you want to keep the biomedical NER)
 try:

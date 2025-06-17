@@ -22,6 +22,7 @@ pytesseract==0.3.10
 # Machine Learning and NLP
 torch
 transformers
+sentencepiece
 spacy
 scispacy
 nltk
