@@ -4,7 +4,6 @@ WORKDIR /app/frontend
 
 # Copy package files and install dependencies
 COPY docu-health-assist/package*.json ./
-COPY docu-health-assist/.env .env
 RUN npm install
 
 # Copy the rest of the frontend code
