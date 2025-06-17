@@ -4,6 +4,7 @@ WORKDIR /app/frontend
 COPY docu-health-assist/package.json docu-health-assist/package-lock.json ./
 RUN npm install
 COPY docu-health-assist/ ./
+COPY docu-health-assist/.env .env 
 RUN npm run build
 
 # Stage 2: Build FastAPI backend
