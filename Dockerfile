@@ -2,12 +2,22 @@
 FROM node:20 AS frontend-build
 WORKDIR /app/frontend
 
+# Install system dependencies that might be needed for npm packages
+RUN apt-get update && apt-get install -y \
+    python3 \
+    make \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
+
 # Copy package files and install dependencies
 COPY docu-health-assist/package*.json ./
-RUN npm install
+RUN npm ci --only=production
 
 # Copy the rest of the frontend code
 COPY docu-health-assist/ ./
+
+# Install dev dependencies for build
+RUN npm install
 
 # Build the React app
 RUN npm run build
