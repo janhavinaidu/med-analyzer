@@ -19,8 +19,6 @@ RUN echo "REACT_APP_API_URL=$REACT_APP_API_URL" > .env
 # Build the React app
 RUN npm run build
 
----
-
 # Stage 2: Build FastAPI backend
 FROM python:3.11-slim as backend
 WORKDIR /app
