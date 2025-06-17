@@ -1,9 +1,9 @@
 # Stage 1: Build React frontend
 FROM node:20 as frontend-build
 WORKDIR /app/frontend
-COPY frontend/package.json frontend/package-lock.json ./
+COPY docu-health-assist/package.json docu-health-assist/package-lock.json ./
 RUN npm install
-COPY frontend/ ./
+COPY docu-health-assist/ ./
 RUN npm run build
 
 # Stage 2: Build FastAPI backend
