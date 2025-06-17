@@ -1,43 +1,42 @@
 # Stage 1: Build React frontend
-FROM node:20 AS frontend-build
+FROM node:20 as frontend-build
 WORKDIR /app/frontend
 
-# Install system dependencies that might be needed for npm packages
-RUN apt-get update && apt-get install -y \
-    python3 \
-    make \
-    g++ \
-    && rm -rf /var/lib/apt/lists/*
+# Set environment variable passed from Render during build
+ARG REACT_APP_API_URL
+ENV REACT_APP_API_URL=$REACT_APP_API_URL
 
-# Copy package files and install dependencies
-COPY docu-health-assist/package*.json ./
-RUN npm ci --only=production
+# Install dependencies
+COPY docu-health-assist/package.json docu-health-assist/package-lock.json ./
+RUN npm install
 
-# Copy the rest of the frontend code
+# Copy rest of the frontend source code
 COPY docu-health-assist/ ./
 
-# Install dev dependencies for build
-RUN npm install
+# Dynamically create .env file for build with provided variable
+RUN echo "REACT_APP_API_URL=$REACT_APP_API_URL" > .env
 
 # Build the React app
 RUN npm run build
 
+---
+
 # Stage 2: Build FastAPI backend
-FROM python:3.11-slim AS backend
+FROM python:3.11-slim as backend
 WORKDIR /app
 
-# Copy backend code
+# Copy backend source
 COPY backend/ ./backend
+COPY backend/requirements.txt .
 
-# Copy frontend build output into backend
+# Copy built React frontend into backend to serve
 COPY --from=frontend-build /app/frontend/dist ./frontend-dist
 
-# Install backend dependencies
-COPY backend/requirements.txt .
+# Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Expose backend port
 EXPOSE 8000
 
-# Start the FastAPI app
+# Run FastAPI app
 CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
