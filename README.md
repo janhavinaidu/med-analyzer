@@ -1,125 +1,75 @@
-# Medical Document Analysis Backend
+# 🩺 Med Analyzer Pro
 
-A FastAPI backend service for analyzing medical documents, extracting information, and generating reports.
+> An AI-powered full-stack web application that analyzes medical reports, extracts diagnosis codes, interprets blood results, summarizes documents, performs OCR on scanned PDFs, and includes a chatbot.
 
-## Features
+---
 
-1. **PDF Processing**
-   - Upload and extract text from medical PDFs
-   - Supports prescriptions and blood test reports
+## 🧠 Project Overview
 
-2. **Text Analysis**
-   - Manual text entry with OpenAI-powered correction
-   - Medical entity extraction using scispaCy
-   - ICD-10 code prediction
-   - Blood test value analysis
+**Med Analyzer Pro** is a smart healthcare assistant that allows users to:
+- 📄 Upload PDFs or scanned images (OCR-enabled)
+- 🧾 Extract critical medical information
+- 🧬 Predict **ICD-10 diagnosis codes** from free text
+- 🩸 Analyze **blood test values**
+- 📝 Summarize long reports using a **T5 Transformer model**
+- 💬 Ask health-related queries via a **Cohere-powered chatbot**
 
-3. **Summarization**
-   - T5-based bullet-point summarization
-   - Structured discharge summary generation
+This application is built to automate and assist in processing complex medical documents using AI and NLP.
 
-4. **Chatbot**
-   - Context-aware medical query responses
-   - Pattern-based answer generation
+---
 
-5. **Report Generation**
-   - PDF report generation with ReportLab
-   - Includes all analysis results and summaries
+## 📽️ Demo Video
 
-## Setup
+> 🚫 **Not deployed** due to memory limits of Docker-based hosting.  
+> 📹 Instead, [https://drive.google.com/drive/folders/1-lbfyS0chIhR4NwcWBJikQoFhgfOMDnO?usp=sharing]
 
-1. Clone the repository:
-   ```bash
-   git clone <repository-url>
-   cd medical-doc-analysis
-   ```
+---
 
-2. Create a virtual environment:
-   ```bash
-   python -m venv venv
-   venv\Scripts\activate     # Windows
-   ```
+## 💡 Features
 
-3. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
+| Feature                      | Tech Used              | Description |
+|-----------------------------|------------------------|-------------|
+| 📂 PDF/Text Upload          | React + File Reader    | Upload medical reports as PDFs or plain text |
+| 🧠 ICD-10 Prediction        | Rule-based NLP         | Extract diagnosis codes from medical text |
+| 🩸 Blood Report Analyzer    | Regex + Logic Engine   | Interprets common blood parameters |
+| 📝 Medical Summarizer       | HuggingFace T5 Model   | Summarizes long textual reports |
+| 📷 OCR Extraction           | Tesseract OCR + OpenCV | Extract text from scanned images/PDFs |
+| 💬 AI Chatbot               | Cohere API             | Ask questions and get insights on reports |
+| 🧵 REST API Backend         | FastAPI                | API endpoints for all processing |
+| 🎨 Frontend UI              | React + Vite           | Responsive interface with result cards |
+| 🐳 Dockerized App           | Docker Multi-Stage     | Unified container for both frontend & backend |
 
-4. Install scispaCy model:
-   ```bash
-   pip install https://s3-us-west-2.amazonaws.com/ai2-s2-scispacy/releases/v0.5.3/en_core_sci_sm-0.5.3.tar.gz
-   ```
+---
 
-5. Create `.env` file:
-   ```
-   OPENAI_API_KEY=your_openai_api_key_here
-   ```
+## 🛠️ Tech Stack
 
-## Usage
+- **Frontend**: React.js, Vite
+- **Backend**: FastAPI,Python
+- **AI Models**:
+  - 🤖 T5 (Summarization)
+  - 🧠 Cohere API (Chatbot)
+- **OCR**: Tesseract OCR
+- **PDF Handling**: pdfplumber
+- **Deployment Ready**: Docker, Render/Fly.io/Vercel compatible
 
-1. Start the server:
-   ```bash
-   uvicorn main:app --reload
-   ```
+---
 
-2. Access the API documentation:
-   - OpenAPI UI: http://localhost:8000/docs
-   - ReDoc: http://localhost:8000/redoc
+## 🧪 How to Run Locally
 
-## API Endpoints
+```bash
+git clone https://github.com/janhavinaidu/med-analyzer.git
+cd med-analyzer
+Docker Commands for Local Deployment
 
-### PDF Processing
-- `POST /api/pdf/upload`: Upload and process PDF files
+# 1. Pull the latest changes from GitHub
+git pull
 
-### Text Processing
-- `POST /api/text/correct`: Correct and refine medical text
-- `POST /api/text/analyze`: Analyze medical text
+# 2. Rebuild the Docker image with the API URL for the frontend to access the backend
+docker build -t health-assist-app --build-arg REACT_APP_API_URL=/api .
 
-### Medical Analysis
-- `POST /api/analysis/entities`: Extract medical entities
-- `POST /api/analysis/icd-codes`: Predict ICD-10 codes
-- `POST /api/analysis/blood-test`: Analyze blood test values
-- `POST /api/analysis/full`: Perform full analysis
+# 3. Stop and remove any existing containers with the same name
+docker stop health-assist-container || true
+docker rm health-assist-container || true
 
-### Summarization
-- `POST /api/summary/bullet-points`: Generate bullet-point summary
-- `POST /api/summary/discharge`: Generate discharge summary
-
-### Chatbot
-- `POST /api/chat/message`: Process single message
-- `POST /api/chat/conversation`: Process conversation history
-
-### Report Generation
-- `POST /api/report/generate`: Generate PDF report
-
-## Environment Variables
-
-- `OPENAI_API_KEY`: OpenAI API key for text correction
-- `T5_MODEL_NAME`: T5 model name for summarization (default: t5-base)
-- `SCISPACY_MODEL`: scispaCy model name (default: en_core_sci_sm)
-- `HOST`: Server host (default: 0.0.0.0)
-- `PORT`: Server port (default: 8000)
-- `RELOAD`: Enable auto-reload (default: True)
-- `FRONTEND_URL`: Frontend URL for CORS (default: http://localhost:5173)
-
-## Dependencies
-
-- FastAPI
-- PyPDF2
-- OpenAI
-- scispaCy
-- Transformers (T5)
-- ReportLab
-- RapidFuzz
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Commit your changes
-4. Push to the branch
-5. Create a Pull Request
-
-## License
-
-MIT License 
+# 4. Run the new container
+docker run -d -p 8000:8000 --name health-assist-container health-assist-app
